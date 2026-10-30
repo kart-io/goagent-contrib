@@ -4,8 +4,8 @@ go 1.25.0
 
 require (
 	github.com/kart-io/goagent v0.16.1
-	github.com/kart-io/goagent-contrib/document v0.0.0-00010101000000-000000000000
-	github.com/kart-io/goagent-contrib/retrieval v0.0.0
+	github.com/kart-io/goagent-contrib/document v0.1.0
+	github.com/kart-io/goagent-contrib/retrieval v0.1.0
 	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	github.com/stretchr/testify v1.11.1
 )
@@ -32,10 +32,4 @@ require (
 	golang.org/x/net v0.47.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-)
-
-// 同仓库的模块尚未发布，开发期间指向本地；发布前改为正式版本。
-replace (
-	github.com/kart-io/goagent-contrib/document => ../
-	github.com/kart-io/goagent-contrib/retrieval => ../../retrieval
 )

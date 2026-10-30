@@ -70,6 +70,8 @@ github.com/gorilla/websocket v1.5.3 h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aN
 github.com/gorilla/websocket v1.5.3/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
 github.com/kart-io/goagent v0.16.1 h1:RGW7MttdxfooHTxy1d/HgPqDxtu9QhCl2nWR9iZYcGk=
 github.com/kart-io/goagent v0.16.1/go.mod h1:f2sugfIR4cFNBuil8P9qC+2HA2dnxGp9981dbBW9T+Q=
+github.com/kart-io/goagent-contrib/retrieval v0.1.0 h1:7yMnfjzLFOQOexNIfiWHTcHm6oX72IoJaTB5DDjtPmo=
+github.com/kart-io/goagent-contrib/retrieval v0.1.0/go.mod h1:z4Yuz2FDOiRLvucFp4kNI0sYLXXmWb7jYsf/OeGhO7k=
 github.com/klauspost/cpuid/v2 v2.2.9 h1:66ze0taIn2H33fBvCkXuv9BmCwDfafmiIVpKV9kKGuY=
 github.com/klauspost/cpuid/v2 v2.2.9/go.mod h1:rqkxqrZ1EhYM9G+hXH7YdowN5R5RGN6NK4QwQ3WMXF8=
 github.com/kr/pretty v0.3.1 h1:flRD4NNwYAUpkphVc1HcthR4KEIFJ65n8Mw5qdRn3LE=

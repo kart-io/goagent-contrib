@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	cloud.google.com/go/aiplatform v1.90.0
 	github.com/kart-io/goagent v0.16.1
-	github.com/kart-io/goagent-contrib/retrieval v0.0.0
+	github.com/kart-io/goagent-contrib/retrieval v0.1.0
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/api v0.256.0
 	google.golang.org/protobuf v1.36.10
@@ -60,6 +60,3 @@ require (
 	google.golang.org/grpc v1.76.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-// 同仓库的 retrieval 尚未发布，开发期间指向本地；发布前改为正式版本。
-replace github.com/kart-io/goagent-contrib/retrieval => ../

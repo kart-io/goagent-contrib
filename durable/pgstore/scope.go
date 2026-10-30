@@ -39,7 +39,8 @@ func (c *scope) Save(ctx context.Context, id string, snap *durable.Snapshot) err
 func (s *Store) RemoveScope(ctx context.Context, name string) error {
 	ns := scopeNS(name)
 	err := pgx.BeginFunc(ctx, s.cfg.Pool, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, ns); err != nil {
+		// 墓碑在主备切换中丢失会让已删除的作用域重新接受写入，须同步提交。
+		if _, err := tx.Exec(ctx, `SELECT set_config('synchronous_commit', 'on', true), pg_advisory_xact_lock(hashtextextended($1, 0))`, ns); err != nil {
 			return err
 		}
 		_, err := tx.Exec(ctx, `INSERT INTO goagent_durable_scope (ns, removed_at) VALUES ($1, now()) ON CONFLICT (ns) DO NOTHING`, ns)

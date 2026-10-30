@@ -1,12 +1,15 @@
 package pgstore
 
 import (
+	"bytes"
 	"context"
 	crand "crypto/rand"
 	"encoding/json"
+	"net"
 	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -238,4 +241,102 @@ func TestPrimaryRestart(t *testing.T) {
 		return err == nil
 	}, 30*time.Second, 200*time.Millisecond)
 	require.NoError(t, unlock())
+}
+
+// dropAfterCommit 在 armed 时把首个 COMMIT 写出后立即断开连接：服务端已提交，客户端只看到连接错误。
+type dropAfterCommit struct {
+	net.Conn
+	armed *atomic.Bool
+}
+
+func (c *dropAfterCommit) Write(b []byte) (int, error) {
+	n, err := c.Conn.Write(b)
+	if bytes.Contains(bytes.ToLower(b), []byte("commit")) && c.armed.CompareAndSwap(true, false) {
+		_ = c.Conn.Close()
+	}
+	return n, err
+}
+
+// TestAcquireUncertainCommitCleanup：获取租约的提交结果不确定时，按自己的令牌删除已写入的租约。
+func TestAcquireUncertainCommitCleanup(t *testing.T) {
+	dsn, schema := newSchema(t)
+	cfg, err := pgxpool.ParseConfig(dsn)
+	require.NoError(t, err)
+	cfg.ConnConfig.RuntimeParams["search_path"] = schema
+	armed := &atomic.Bool{}
+	cfg.ConnConfig.DialFunc = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		conn, err := (&net.Dialer{}).DialContext(ctx, network, addr)
+		if err != nil {
+			return nil, err
+		}
+		return &dropAfterCommit{Conn: conn, armed: armed}, nil
+	}
+	pool, err := pgxpool.NewWithConfig(context.Background(), cfg)
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	s, err := New(context.Background(), Config{Pool: pool, LeaseTTL: time.Minute})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close(context.Background()) })
+
+	armed.Store(true)
+	_, err = s.Lock(context.Background(), "run")
+	require.Error(t, err)
+	require.False(t, armed.Load(), "COMMIT 应已发出")
+	var n int
+	require.NoError(t, newPool(t, dsn, schema).QueryRow(context.Background(), `SELECT count(*) FROM goagent_durable_lease WHERE id = 'run'`).Scan(&n))
+	require.Zero(t, n, "提交结果不确定时应删除自己写入的租约，否则其他实例要等 TTL 过期")
+}
+
+// TestSyncCommit：会话默认关闭同步提交时，Save 与 RemoveScope 的墓碑仍等待同步备库确认。
+// 用一个不存在的同步备库模拟：同步提交会一直等待，异步提交立即返回。会修改服务器配置，只在专用容器中运行。
+func TestSyncCommit(t *testing.T) {
+	if os.Getenv("GOAGENT_PGSTORE_CONTAINER") == "" {
+		t.Skip("未设置 GOAGENT_PGSTORE_CONTAINER，跳过需要修改服务器配置的同步提交测试")
+	}
+	dsn, schema := newSchema(t)
+	cfg, err := pgxpool.ParseConfig(dsn)
+	require.NoError(t, err)
+	cfg.ConnConfig.RuntimeParams["search_path"] = schema
+	cfg.ConnConfig.RuntimeParams["synchronous_commit"] = "off"
+	pool, err := pgxpool.NewWithConfig(context.Background(), cfg)
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	s, err := New(context.Background(), Config{Pool: pool, LeaseTTL: time.Minute})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close(context.Background()) })
+	unlock, err := s.Lock(context.Background(), "run")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = unlock() })
+
+	admin := newPool(t, dsn, schema)
+	setStandby := func(names string) {
+		_, err := admin.Exec(context.Background(), `ALTER SYSTEM SET synchronous_standby_names = '`+names+`'`)
+		require.NoError(t, err)
+		_, err = admin.Exec(context.Background(), `SELECT pg_reload_conf()`)
+		require.NoError(t, err)
+	}
+	// 晚于建表注册，先于删 schema 执行，避免清理时的同步提交被挂住。
+	t.Cleanup(func() { setStandby("") })
+	setStandby("ghost")
+
+	const wait = 300 * time.Millisecond
+	blocked := func(f func(context.Context) error) bool {
+		ctx, cancel := context.WithTimeout(context.Background(), wait)
+		defer cancel()
+		start := time.Now()
+		_ = f(ctx)
+		return time.Since(start) >= wait
+	}
+	write := func(p *pgxpool.Pool) func(context.Context) error {
+		return func(ctx context.Context) error {
+			_, err := p.Exec(ctx, `UPDATE goagent_durable_schema SET version = version`)
+			return err
+		}
+	}
+	require.Eventually(t, func() bool { return blocked(write(admin)) }, 5*time.Second, 50*time.Millisecond, "同步备库配置未生效")
+	require.False(t, blocked(write(pool)), "会话关闭同步提交时普通写入不应等待")
+
+	snap := &durable.Snapshot{Version: "v1", RunID: "run", Data: json.RawMessage(`{}`)}
+	require.True(t, blocked(func(ctx context.Context) error { return s.Save(ctx, "run", snap) }), "Save 应同步提交")
+	require.True(t, blocked(func(ctx context.Context) error { return s.RemoveScope(ctx, "tenant") }), "墓碑应同步提交")
 }

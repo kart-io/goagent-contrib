@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/jackc/pgx/v5 v5.10.0
-	github.com/kart-io/goagent v0.15.0
+	github.com/kart-io/goagent v0.16.0
 	github.com/stretchr/testify v1.11.1
 )
 
@@ -23,6 +23,3 @@ require (
 	golang.org/x/text v0.31.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-// storetest 与新的 durable 契约尚未发布，开发期间指向本地 goagent；发布前改为正式版本。
-replace github.com/kart-io/goagent => ../../../goagent

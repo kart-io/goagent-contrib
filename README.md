@@ -30,4 +30,8 @@ defer store.Close(ctx)
 
 ### 版本
 
-依赖尚未发布的 goagent（`core/durable/storetest` 与租约用例）。开发期间 `go.mod` 用 `replace` 指向同级目录 `../goagent`，发布前须改为正式版本。
+依赖 goagent v0.16.0 及以上（`core/durable/storetest` 与租约用例自该版本提供）。模块 tag 形如 `durable/pgstore/v0.1.0`：
+
+```bash
+go get github.com/kart-io/goagent-contrib/durable/pgstore@v0.1.0
+```

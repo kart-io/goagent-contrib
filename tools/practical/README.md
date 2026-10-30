@@ -587,9 +587,7 @@ func buildQuery(table string, column string, value interface{}) (string, []inter
 
 ## 相关文档
 
-- [GoAgent 工具系统](../../docs/guides/TOOLS.md)
-- [安全最佳实践](../../docs/guides/SECURITY.md)
-- [错误处理指南](../../errors/README.md)
+- [错误处理指南](https://github.com/kart-io/goagent/blob/master/errors/README.md)
 
 ## 贡献
 

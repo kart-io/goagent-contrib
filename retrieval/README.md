@@ -521,7 +521,7 @@ r := retrieval.AsRetriever(customRetriever)
 docs, err := r.Invoke(ctx, query) // Stream、Batch、Pipe 使用相同检索实现
 ```
 
-中文索引、重排序限制和迁移说明见 [能力指南](../docs/guides/PRIORITY_CAPABILITIES.md)。
+中文索引、重排序限制和迁移说明见 [能力指南](https://github.com/kart-io/goagent/blob/v0.16.1/docs/guides/PRIORITY_CAPABILITIES.md)（goagent v0.16.1，迁移前的版本）。
 
 ### 自定义重排序器
 

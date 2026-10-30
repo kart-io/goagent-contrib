@@ -556,5 +556,5 @@ go test -bench=. -benchmem ./document/...
 ## 相关文档
 
 - [Retrieval 系统](../retrieval/README.md)
-- [Callback 系统](../core/README.md)
-- [Vector Stores](../vectorstores/README.md)
+- [Callback 系统](https://github.com/kart-io/goagent/blob/master/core/README.md)
+- [Vector Stores](../retrieval/README.md)

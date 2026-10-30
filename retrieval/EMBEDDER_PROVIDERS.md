@@ -534,6 +534,6 @@ store := retrieval.NewMemoryVectorStore(retrieval.MemoryVectorStoreConfig{
 
 ## 相关文档
 
-- [快速入门](QUICKSTART.md)
-- [LLM 提供商指南](LLM_PROVIDERS.md)
-- [架构概述](../architecture/ARCHITECTURE.md)
+- [快速入门](https://github.com/kart-io/goagent/blob/master/docs/guides/QUICKSTART.md)
+- [LLM 提供商指南](https://github.com/kart-io/goagent/blob/master/docs/guides/LLM_PROVIDERS.md)
+- [架构概述](https://github.com/kart-io/goagent/blob/master/docs/architecture/ARCHITECTURE.md)

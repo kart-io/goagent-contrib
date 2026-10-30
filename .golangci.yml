@@ -1,0 +1,32 @@
+# golangci-lint v2 配置，与 goagent 主仓库一致；各子模块向上查找使用本文件。
+version: "2"
+
+linters:
+  default: standard
+  settings:
+    govet:
+      enable:
+        - atomic
+        - bools
+        - composites
+        - copylocks
+        - nilfunc
+        - printf
+        - stdmethods
+        - structtag
+  exclusions:
+    rules:
+      # 测试代码的错误检查标准与 goagent 相同
+      - path: _test\.go
+        linters:
+          - errcheck
+          - govet
+          - staticcheck
+
+run:
+  timeout: 5m
+  tests: true
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

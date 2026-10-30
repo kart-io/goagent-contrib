@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  module:
+    name: ${{ matrix.module }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - document
+          - document/pdf
+          - durable/pgstore
+          - retrieval
+          - retrieval/cohere
+          - retrieval/qdrant
+          - retrieval/vertexai
+          - tools/database
+          - tools/practical
+    # 只有 pgstore 的测试会连接数据库，其余模块未设置 DSN 时不受影响
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      GOAGENT_PGSTORE_DSN: postgres://postgres:test@127.0.0.1:5432/postgres?sslmode=disable
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+
+      - name: Vet
+        run: go vet ./...
+
+      # 数据库重启与同步提交测试需要专用容器（GOAGENT_PGSTORE_CONTAINER），在 CI 中自动跳过
+      - name: Test
+        run: go test -race -count=1 ./...
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.6.2
+          working-directory: ${{ matrix.module }}
+          args: --config=${{ github.workspace }}/.golangci.yml

@@ -40,8 +40,8 @@ github.com/googleapis/gax-go/v2 v2.15.0 h1:SyjDc1mGgZU5LncH8gimWo9lW1DtIfPibOG81
 github.com/googleapis/gax-go/v2 v2.15.0/go.mod h1:zVVkkxAQHa1RQpg9z2AUCMnKhi0Qld9rcmyfL1OZhoc=
 github.com/gorilla/websocket v1.5.3 h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aNNg=
 github.com/gorilla/websocket v1.5.3/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
-github.com/kart-io/goagent v0.17.1 h1:l9eUOV2IvG9cq/nLLqECj+/k+biuzN78ADZM9lPhRYE=
-github.com/kart-io/goagent v0.17.1/go.mod h1:+tp4/uNhdMeTlYv5qMP+nwYAdTofnnSuOixyqR1Qxa8=
+github.com/kart-io/goagent v0.20.0 h1:YZbvmOL/0YOHhPReDVS71k12WsUTFyVSKtLOmhi/0uE=
+github.com/kart-io/goagent v0.20.0/go.mod h1:+tp4/uNhdMeTlYv5qMP+nwYAdTofnnSuOixyqR1Qxa8=
 github.com/kart-io/goagent-contrib/document v0.1.0 h1:8OOTuCv+8X6aAiRg96QumLMnpK7gHQwRDHzvonKNWxA=
 github.com/kart-io/goagent-contrib/document v0.1.0/go.mod h1:0+mys6y+tUxC4BuVNJ8TrzDtitf2xeB0upr/I7ByBlY=
 github.com/kart-io/goagent-contrib/retrieval v0.1.0 h1:7yMnfjzLFOQOexNIfiWHTcHm6oX72IoJaTB5DDjtPmo=

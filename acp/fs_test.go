@@ -67,6 +67,17 @@ func TestClientFSWritesThroughEditor(t *testing.T) {
 	_, err = s.FileSystem().WriteFile(ctx, "sub/b.go", []byte("新文件"), env.WriteIntent{CreateIfAbsent: true})
 	require.NoError(t, err)
 	require.Equal(t, "新文件", ed.files[filepath.Join(dir, "sub", "b.go")])
+	require.DirExists(t, filepath.Join(dir, "sub"), "父目录由本模块创建")
+
+	_, err = s.FileSystem().WriteFile(ctx, "nope.go", []byte("x"), env.WriteIntent{IfVersion: versionOf([]byte("旧"))})
+	require.ErrorIs(t, err, env.ErrStale, "文件不存在时条件写入冲突")
+
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "d"), 0o755))
+	_, err = s.FileSystem().WriteFile(ctx, "d", []byte("x"), env.WriteIntent{})
+	require.ErrorContains(t, err, "是目录")
+	_, _, err = s.FileSystem().ReadFile(ctx, "d")
+	require.ErrorContains(t, err, "是目录")
+	require.NotContains(t, ed.reads, filepath.Join(dir, "d"))
 }
 
 func TestClientFSDelegatesOtherOps(t *testing.T) {
@@ -86,9 +97,15 @@ func TestClientFSDelegatesOtherOps(t *testing.T) {
 func TestFSFallsBackWithoutCapability(t *testing.T) {
 	s, ed, dir := fsSession(t, acpsdk.ClientCapabilities{Fs: acpsdk.FileSystemCapabilities{ReadTextFile: true}})
 	ctx := context.Background()
+	path := filepath.Join(dir, "a.go")
+	ed.files[path] = "缓冲区"
 	_, err := s.FileSystem().WriteFile(ctx, "a.go", []byte("本地写"), env.WriteIntent{})
 	require.NoError(t, err)
-	disk, _ := os.ReadFile(filepath.Join(dir, "a.go"))
+	data, _, err := s.FileSystem().ReadFile(ctx, "a.go")
+	require.NoError(t, err)
+	require.Equal(t, "本地写", string(data), "只支持一侧时读写都走磁盘")
+	disk, _ := os.ReadFile(path)
 	require.Equal(t, "本地写", string(disk))
 	require.Empty(t, ed.writes)
+	require.Empty(t, ed.reads)
 }

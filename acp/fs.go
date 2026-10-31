@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 
 	acpsdk "github.com/coder/acp-go-sdk"
@@ -16,10 +17,8 @@ import (
 // clientFS 把读写转发给编辑器，使 Agent 读到未保存的缓冲区、写入出现在编辑器中；
 // 路径限定与 ACP 没有的操作（Stat、Walk、Remove）沿用工作区的 LocalFS。
 // 编辑器不参与写入协调，条件写入的检查与写入之间的修改无法发现。
-type clientFS struct {
-	s           *Session
-	read, write bool
-}
+// 仅在客户端同时支持读与写时使用：只转发一侧会让版本比对与磁盘、缓冲区错位。
+type clientFS struct{ s *Session }
 
 var _ env.FileSystem = (*clientFS)(nil)
 
@@ -45,16 +44,17 @@ func (f *clientFS) abs(path string) (string, error) {
 }
 
 func (f *clientFS) ReadFile(ctx context.Context, path string) ([]byte, env.Version, error) {
-	if !f.read {
-		return f.s.local.ReadFile(ctx, path)
-	}
 	abs, err := f.abs(path)
 	if err != nil {
 		return nil, "", err
 	}
 	// ACP 没有标准的"不存在"错误码，存在性以磁盘为准。
-	if _, err := f.s.local.Stat(ctx, path); err != nil {
+	info, err := f.s.local.Stat(ctx, path)
+	if err != nil {
 		return nil, "", err
+	}
+	if info.IsDir() {
+		return nil, "", fmt.Errorf("acp: %s 是目录", path)
 	}
 	resp, err := f.s.conn.client().ReadTextFile(ctx, acpsdk.ReadTextFileRequest{SessionId: acpsdk.SessionId(f.s.id), Path: abs})
 	if err != nil {
@@ -65,30 +65,38 @@ func (f *clientFS) ReadFile(ctx context.Context, path string) ([]byte, env.Versi
 }
 
 func (f *clientFS) WriteFile(ctx context.Context, path string, data []byte, intent env.WriteIntent) (env.Version, error) {
-	if !f.write {
-		return f.s.local.WriteFile(ctx, path, data, intent)
-	}
 	abs, err := f.abs(path)
 	if err != nil {
 		return "", err
 	}
-	if intent.CreateIfAbsent {
-		_, err := f.s.local.Stat(ctx, path)
-		if err == nil {
+	info, err := f.s.local.Stat(ctx, path)
+	switch {
+	case err == nil:
+		if info.IsDir() {
+			return "", fmt.Errorf("acp: %s 是目录", path)
+		}
+		if intent.CreateIfAbsent {
 			return "", env.ErrExists
 		}
-		if !errors.Is(err, fs.ErrNotExist) {
-			return "", err
+		if intent.IfVersion != "" {
+			_, current, err := f.ReadFile(ctx, path)
+			if err != nil {
+				return "", err
+			}
+			if current != intent.IfVersion {
+				return "", env.ErrStale
+			}
 		}
-	}
-	if intent.IfVersion != "" {
-		_, current, err := f.ReadFile(ctx, path)
-		if err != nil {
-			return "", err
-		}
-		if current != intent.IfVersion {
+	case errors.Is(err, fs.ErrNotExist):
+		if intent.IfVersion != "" {
 			return "", env.ErrStale
 		}
+	default:
+		return "", err
+	}
+	// ACP 未规定编辑器是否创建父目录，与 LocalFS 一致由这里按需创建；Perm 无法经 ACP 传递，不转发。
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		return "", err
 	}
 	if _, err := f.s.conn.client().WriteTextFile(ctx, acpsdk.WriteTextFileRequest{SessionId: acpsdk.SessionId(f.s.id), Path: abs, Content: string(data)}); err != nil {
 		return "", fmt.Errorf("acp: 经编辑器写入 %s：%w", path, err)

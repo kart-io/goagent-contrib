@@ -40,8 +40,8 @@ func newSession(c *conn, id, cwd string, mcp []acpsdk.McpServer) (*Session, erro
 	}
 	s := &Session{id: id, cwd: cwd, mcp: mcp, conn: c, local: local}
 	caps := c.capabilities().Fs
-	if caps.ReadTextFile || caps.WriteTextFile {
-		s.fs = &clientFS{s: s, read: caps.ReadTextFile, write: caps.WriteTextFile}
+	if caps.ReadTextFile && caps.WriteTextFile {
+		s.fs = &clientFS{s: s}
 	} else {
 		s.fs = local
 	}

@@ -16,6 +16,12 @@ func (c *conn) LoadSession(ctx context.Context, p acpsdk.LoadSessionRequest) (ac
 		return acpsdk.LoadSessionResponse{}, acpsdk.NewMethodNotFound(acpsdk.AgentMethodSessionLoad)
 	}
 	id := string(p.SessionId)
+	c.mu.Lock()
+	_, opened := c.sessions[id]
+	c.mu.Unlock()
+	if opened {
+		return acpsdk.LoadSessionResponse{}, acpsdk.NewInvalidParams(map[string]any{"error": fmt.Sprintf("acp: 会话 %q 已打开，须先 session/close", id)})
+	}
 	events, err := c.srv.store.Read(ctx, id, 0)
 	if errors.Is(err, session.ErrNotFound) {
 		return acpsdk.LoadSessionResponse{}, acpsdk.NewInvalidParams(map[string]any{"error": fmt.Sprintf("acp: 会话 %q 不存在", id)})
@@ -28,6 +34,10 @@ func (c *conn) LoadSession(ctx context.Context, p acpsdk.LoadSessionRequest) (ac
 		return acpsdk.LoadSessionResponse{}, err
 	}
 	if err := s.replay(ctx, events); err != nil {
+		c.mu.Lock()
+		delete(c.sessions, id)
+		delete(c.cwds, id)
+		c.mu.Unlock()
 		return acpsdk.LoadSessionResponse{}, internalError("回放会话", err)
 	}
 	return acpsdk.LoadSessionResponse{}, nil
@@ -50,6 +60,9 @@ func (s *Session) replay(ctx context.Context, events []session.Event) error {
 				updates = append(updates, acpsdk.UpdateAgentMessageText(m.Content))
 			}
 			for _, tc := range m.ToolCalls {
+				if tc.ID == "" {
+					continue
+				}
 				var args any
 				if json.Unmarshal([]byte(tc.Function.Arguments), &args) != nil {
 					args = tc.Function.Arguments
@@ -59,6 +72,10 @@ func (s *Session) replay(ctx context.Context, events []session.Event) error {
 					acpsdk.WithStartStatus(acpsdk.ToolCallStatusPending), acpsdk.WithStartRawInput(args)))
 			}
 		case "tool":
+			if m.ToolCallID == "" {
+				continue
+			}
+			// 旧日志或无工具元数据时无法判断失败，按完成处理。
 			status := acpsdk.ToolCallStatusCompleted
 			if e.Tool != nil && !e.Tool.Success {
 				status = acpsdk.ToolCallStatusFailed

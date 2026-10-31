@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 
 	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/kart-io/goagent/harness/env"
+	"github.com/kart-io/goagent/tools"
 )
 
 // Session 是一个 ACP 会话：Factory 据此构建 Agent。字段由本包维护，对宿主只读。
@@ -22,6 +24,10 @@ type Session struct {
 
 	runner Runner
 	run    sync.Mutex // 同一会话的 prompt 依次执行
+
+	pipeline *tools.Pipeline
+	calls    *callTracker
+	nextCall atomic.Int64
 }
 
 func newSession(c *conn, id, cwd string, mcp []acpsdk.McpServer) (*Session, error) {
@@ -35,6 +41,8 @@ func newSession(c *conn, id, cwd string, mcp []acpsdk.McpServer) (*Session, erro
 	s := &Session{id: id, cwd: cwd, mcp: mcp, conn: c, local: local}
 	s.fs = local
 	s.exec = env.LocalExecutor{Root: cwd}
+	s.calls = newCallTracker()
+	s.pipeline = s.newPipeline()
 	return s, nil
 }
 

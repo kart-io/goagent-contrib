@@ -25,6 +25,7 @@ func (c *conn) Prompt(ctx context.Context, p acpsdk.PromptRequest) (acpsdk.Promp
 
 	s.run.Lock()
 	defer s.run.Unlock()
+	defer s.endTurn(ctx)
 	cancelled := acpsdk.PromptResponse{StopReason: acpsdk.StopReasonCancelled}
 	if ctx.Err() != nil {
 		return cancelled, nil

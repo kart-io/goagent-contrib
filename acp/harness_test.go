@@ -3,6 +3,7 @@ package acp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"slices"
 	"sync"
@@ -10,9 +11,11 @@ import (
 
 	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/kart-io/goagent/builder"
+	"github.com/kart-io/goagent/core/session"
 	"github.com/kart-io/goagent/interfaces"
 	"github.com/kart-io/goagent/llm"
 	"github.com/kart-io/goagent/llm/constants"
+	"github.com/kart-io/goagent/tools"
 	"github.com/stretchr/testify/require"
 )
 
@@ -300,4 +303,85 @@ func plainFactory(model llm.Client, seen chan<- *Session) Factory {
 		}
 		return agent, nil
 	}
+}
+
+// toolFactory 构建经 s.Pipeline() 注册工具的 Agent；ask 非 nil 时作为宿主的审批钩子追加，store 非 nil 时开启会话日志。
+func toolFactory(model llm.Client, ask tools.PreHook, store session.Store, build func(*Session) []interfaces.Tool) Factory {
+	return func(_ context.Context, s *Session) (Runner, error) {
+		p := s.Pipeline()
+		if ask != nil {
+			p.Pre = append(p.Pre, ask)
+		}
+		reg := tools.NewRegistry()
+		for _, tool := range build(s) {
+			if err := reg.Register(tool); err != nil {
+				return nil, err
+			}
+		}
+		d, err := tools.NewDispatcher(reg, tools.DispatchConfig{Pipeline: p})
+		if err != nil {
+			return nil, err
+		}
+		b := builder.NewSimpleBuilder(model).WithSessionID(s.ID()).WithTools(d.Tools()...).WithMaxIterations(4)
+		if store != nil {
+			b = b.WithSessionLog(store)
+		}
+		agent, err := b.Build()
+		if err != nil {
+			return nil, err
+		}
+		return agent, nil
+	}
+}
+
+// echoTool 返回固定结果，每次执行把 runs 加一；fail 非空时返回该错误。
+func echoTool(name string, runs *int, fail string) interfaces.Tool {
+	return tools.NewBaseTool(name, "测试工具 "+name, `{"type":"object","properties":{"q":{"type":"string"}}}`, func(context.Context, *interfaces.ToolInput) (*interfaces.ToolOutput, error) {
+		if runs != nil {
+			*runs++
+		}
+		if fail != "" {
+			return nil, fmt.Errorf("%s", fail)
+		}
+		return &interfaces.ToolOutput{Success: true, Result: name + " 的结果"}, nil
+	})
+}
+
+func only(ts ...interfaces.Tool) func(*Session) []interfaces.Tool {
+	return func(*Session) []interfaces.Tool { return ts }
+}
+
+// askAll 是要求每次调用都审批的宿主钩子，带按工具名放行的会话授权。
+func askAll(_ context.Context, c *tools.Call) (tools.PreDecision, error) {
+	return tools.PreDecision{Kind: tools.PreAsk, Feedback: "需要确认", Grant: toolGrant(c.Tool)}, nil
+}
+
+type toolGrant string
+
+func (g toolGrant) Describe() string           { return "工具 " + string(g) }
+func (g toolGrant) Matches(c *tools.Call) bool { return c.Tool == string(g) }
+
+// statuses 返回某个调用收到的状态序列：tool_call 记为 "start:<status>"，tool_call_update 记为状态。
+func (e *fakeEditor) statuses(id string) []string {
+	var out []string
+	for _, n := range e.notifications() {
+		switch u := n.Update; {
+		case u.ToolCall != nil && string(u.ToolCall.ToolCallId) == id:
+			out = append(out, "start:"+string(u.ToolCall.Status))
+		case u.ToolCallUpdate != nil && string(u.ToolCallUpdate.ToolCallId) == id && u.ToolCallUpdate.Status != nil:
+			out = append(out, string(*u.ToolCallUpdate.Status))
+		}
+	}
+	return out
+}
+
+// lastUpdate 返回某个调用的最后一条 tool_call_update。
+func (e *fakeEditor) lastUpdate(id string) *acpsdk.SessionToolCallUpdate {
+	var last *acpsdk.SessionToolCallUpdate
+	for _, n := range e.notifications() {
+		if u := n.Update.ToolCallUpdate; u != nil && string(u.ToolCallId) == id {
+			last = u
+		}
+	}
+	return last
 }

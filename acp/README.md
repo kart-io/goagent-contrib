@@ -53,7 +53,8 @@ if err := srv.Serve(ctx, os.Stdin, os.Stdout); err != nil {
 
 | ACP | 支持 |
 |---|---|
-| `initialize`、`session/new`、`session/prompt`、`session/cancel` | 是 |
+| `initialize`、`session/new`、`session/prompt` | 是 |
+| `session/cancel` | 是；收到后本轮一律以 `cancelled` 结束，执行中被取消的工具调用标为 failed，内容为"已取消" |
 | `session/close` | 是；取消该会话进行中的 prompt，之后该 ID 的请求返回 invalid-params |
 | `session/load`、`session/list` | 配置 `WithSessionStore` 时 |
 | `authenticate` | 不声明认证方式，返回空响应 |

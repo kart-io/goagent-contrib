@@ -144,6 +144,10 @@ func (c *conn) Prompt(ctx context.Context, p acpsdk.PromptRequest) (response acp
 			}
 			return acpsdk.PromptResponse{}, internalError("执行 Agent", cause)
 		case "done":
+			// 取消与正常结束同时发生时，ACP 要求收到 session/cancel 后以 cancelled 返回。
+			if ctx.Err() != nil {
+				return cancelled, nil
+			}
 			if ev.Output != nil {
 				final, err := finalText(ev.Output.Result)
 				if err != nil {

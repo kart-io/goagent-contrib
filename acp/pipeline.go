@@ -105,7 +105,9 @@ func (s *Session) running(ctx context.Context, call *tools.Call, next func(conte
 		return nil, err
 	}
 	out, err := next(withCallID(ctx, call.CallID))
-	if err != nil {
+	if err != nil && ctx.Err() != nil {
+		s.fail(ctx, call.CallID, "已取消")
+	} else if err != nil {
 		s.fail(ctx, call.CallID, err.Error())
 	} else if msg, ok := tools.ArgumentErrorResult(out); ok {
 		s.fail(ctx, call.CallID, msg)

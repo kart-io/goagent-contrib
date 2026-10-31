@@ -17,6 +17,8 @@ func statusOf(err error) int {
 		return 400
 	case "input_too_large":
 		return 413
+	case "conflict":
+		return 409
 	case "busy":
 		return 429
 	case "unavailable":
@@ -179,6 +181,9 @@ func (h *Handler) serveSSE(w http.ResponseWriter, r *http.Request, input any) {
 				return
 			}
 		case <-o.ready:
+			if !committed {
+				h.writeProblem(w, statusOf(o.err), o.req.ID, classify(o.err))
+			}
 			return
 		case <-o.unconfirmed:
 			if !committed {
@@ -189,11 +194,20 @@ func (h *Handler) serveSSE(w http.ResponseWriter, r *http.Request, input any) {
 			o.cancel()
 			return
 		case <-heartbeat.C:
-			if committed {
-				if err := write([]byte(": heartbeat\n\n")); err != nil {
-					o.cancel()
-					return
+			if !committed {
+				select {
+				case <-o.prepared:
+					w.Header().Set("Content-Type", "text/event-stream")
+					w.Header().Set("Cache-Control", "no-cache")
+					w.WriteHeader(200)
+					committed = true
+				default:
+					continue
 				}
+			}
+			if err := write([]byte(": heartbeat\n\n")); err != nil {
+				o.cancel()
+				return
 			}
 		}
 	}

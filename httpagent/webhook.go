@@ -147,6 +147,9 @@ func cloneNotice(e RunEvent) RunEvent {
 func (h *Handler) publish(o *owner, e RunEvent) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(o.ctx), h.cfg.DeliveryBudget)
 	defer cancel()
+	h.publishContext(ctx, o, e)
+}
+func (h *Handler) publishContext(ctx context.Context, o *owner, e RunEvent) {
 	h.observe(ctx, o, cloneNotice(e))
 	if h.cfg.Delivery != nil {
 		func() {
@@ -194,6 +197,10 @@ func (h *Handler) serveWebhook(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, 405, "", failure("method_not_allowed", "Webhook 要求 POST", nil))
 		return
 	}
+	if err := checkWriter(w, false); err != nil {
+		writeProblem(w, 501, "", failure("unsupported_transport", "HTTP writer 不支持写入期限", err))
+		return
+	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, h.cfg.MaxInputBytes))
 	if err != nil {
 		writeProblem(w, statusOf(inputError(err)), "", classify(inputError(err)))
@@ -219,6 +226,7 @@ func (h *Handler) serveWebhook(w http.ResponseWriter, r *http.Request) {
 		}
 		select {
 		case <-o.ready:
+			o.waitNotice(r.Context())
 			if reply != nil {
 				h.writeJSON(w, reply.Status, reply.Body)
 			} else {

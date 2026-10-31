@@ -35,7 +35,7 @@ h, err := httpagent.New(httpagent.Config{
 | GET /ws | 子协议 `goagent.v1`，JSON run/cancel，返回 accepted/event/ready/error |
 | POST /webhooks/{name} | 宿主显式注册的 inline 或 queued 接收器 |
 
-普通 HTTP 输入必须存在且非 null，支持 JSON 对象/数组/数值；数字保留精度。Output 包含 result、metadata、duration_ms、timestamp、token_usage，不序列化 AgentState。错误为 `{error:{code,message},run_id}`；input 400、超限413、容量429、关闭503、无流式501、已知期限504。未知无终态EOF为 stream_incomplete。
+普通 HTTP 输入必须存在且非 null，支持 JSON 对象/数组/数值；数字保留精度。Output 包含 result、metadata、duration_ms、timestamp、token_usage，不序列化 AgentState。错误为 `{error:{code,message},run_id}`；input 400、接纳冲突409、超限413、容量429、关闭503、无流式501、已知期限504。未知无终态EOF为 stream_incomplete。
 
 ```sh
 curl -H 'Content-Type: application/json' -d '{"input":"查询订单"}' http://127.0.0.1:8097/api/invoke
@@ -88,7 +88,7 @@ workerCtx 必须来自宿主 worker 生命周期，不能沿用已结束的 Webh
 
 先调用 `h.BeginShutdown()` 关闭准入并取消所有者/升级连接，再等待 `server.Shutdown(ctx)` 和 `h.Shutdown(ctx)`，两者完成后关闭 Plugin Host。不要先等 HTTP 自行结束再取消。DeadlineExceeded 只代表已知期限；隐藏的 Runner 内部期限可能表现为 stream_incomplete，示例使用共同外层期限。
 
-默认：执行5分钟，生产者退出/cleanup各5秒，写10秒，接纳2秒，单次通知总预算5秒，SSE心跳15秒，WS ping/pong为30/60秒；输入/事件1MiB，WS队列64项/4MiB，运行64，连接128。可通过 Config 调整；负值和不一致配置在 New 拒绝。自定义 Hook、Factory、Run、cleanup 均须配合 context，框架不能强制停止任意 Go 函数。
+默认：执行5分钟，生产者退出/cleanup各5秒，写10秒，接纳2秒，单次通知总预算5秒，SSE心跳15秒，WS ping/pong为30/60秒；输入/事件1MiB（含传输事件封装，最小配置512字节），WS队列64项/4MiB，运行64，连接128。可通过 Config 调整；负值和不一致配置在 New 拒绝。自定义 Hook、Factory、Run、cleanup 均须配合 context，框架不能强制停止任意 Go 函数。
 
 SSE 中间件应保留 ResponseController 的 Unwrap/Flush/Deadline 能力；跨域 CORS/OPTIONS、Origin策略和代理长连接配置由宿主装配。共享 SessionID 的多个 Agent 实例需宿主会话锁/租约，单实例 executionGate 不等于跨实例互斥。
 
@@ -100,3 +100,9 @@ go vet ./...
 ```
 
 包含真实 HTTP/WS、真实 Builder/Plugin 工具、持久接纳记录重建、取消、迟到清理、心跳、通知错误与大小上限测试。模型响应由本地脚本服务控制，不是线上模型质量测试。Web 页面示例位于 goagent-examples/orchestration/httpagent。
+
+### 审阅后的生命周期约束
+
+终态通知在结果冻结时生成不可变快照，与 cleanup 独立推进；worker 获取的 Output 是独立副本。通知、cleanup 及超时报告回调都属于同一运行所有者，Shutdown 不会在其仍活动时返回成功。JSON 在总投递预算内等待尝试完成；SSE/WS 终态可先发送，WS ready 等待必要 cleanup，活动运行槽位等所有工作结束后释放。
+
+SSE 在能力检查完成后，即使尚无首个业务事件也发送注释心跳。WS 在冻结终态前检查完整封装大小，不能因封装超限丢弃终态后继续发送 ready。页面须拒绝没有 done/error 的 ready；极小、无法容纳错误终态的容量配置在 New 拒绝。

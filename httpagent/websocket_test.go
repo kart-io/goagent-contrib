@@ -2,6 +2,7 @@ package httpagent
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -155,4 +156,59 @@ func TestWebSocketOversizedResultHasOneErrorAndReady(t *testing.T) {
 	require.Equal(t, "error", event["type"])
 	require.Equal(t, "output_too_large", event["error"].(map[string]any)["code"])
 	require.Equal(t, "ready", readWS(t, c)["type"])
+}
+
+func TestWebSocketCannotStartNextRunBeforeCleanupReady(t *testing.T) {
+	release, entered := make(chan struct{}), make(chan struct{})
+	h, err := New(Config{Factory: func(context.Context, RunRequest) (Binding, Cleanup, error) {
+		return Answer(func(context.Context, any) (*builder.AgentOutput, error) {
+			return &builder.AgentOutput{Result: "done"}, nil
+		}), func(context.Context) error { close(entered); <-release; return nil }, nil
+	}})
+	require.NoError(t, err)
+	server := httptest.NewServer(h)
+	defer server.Close()
+	defer h.Shutdown(context.Background())
+	c := dialWS(t, server)
+	require.NoError(t, c.WriteJSON(map[string]any{"type": "run", "request_id": "first", "input": 1}))
+	require.Equal(t, "accepted", readWS(t, c)["type"])
+	require.Equal(t, "done", readWS(t, c)["event"].(map[string]any)["type"])
+	<-entered
+	require.NoError(t, c.WriteJSON(map[string]any{"type": "run", "request_id": "too-soon", "input": 2}))
+	require.Equal(t, "busy", readWS(t, c)["error"].(map[string]any)["code"])
+	close(release)
+	require.Equal(t, "ready", readWS(t, c)["type"])
+}
+func TestWebSocketSlowConsumerExitsAtWriteDeadline(t *testing.T) {
+	stopped := make(chan struct{})
+	var emitted atomic.Int32
+	h, err := New(Config{WriteTimeout: 20 * time.Millisecond, Factory: func(context.Context, RunRequest) (Binding, Cleanup, error) {
+		return Binding{Streaming: true, Mode: "unified", Run: func(ctx context.Context, _ any, emit EmitFunc) (*builder.AgentOutput, error) {
+			defer close(stopped)
+			payload := strings.Repeat("x", 512<<10)
+			for i := 0; i < 128; i++ {
+				emitted.Add(1)
+				if err := emit(builder.AgentEvent{Type: "text", Delta: payload}); err != nil {
+					return nil, err
+				}
+			}
+			return &builder.AgentOutput{Result: "done"}, nil
+		}}, nil, nil
+	}})
+	require.NoError(t, err)
+	server := httptest.NewServer(h)
+	defer server.Close()
+	defer h.Shutdown(context.Background())
+	c := dialWS(t, server)
+	tcp, ok := c.UnderlyingConn().(*net.TCPConn)
+	require.True(t, ok)
+	require.NoError(t, tcp.SetReadBuffer(1024))
+	require.NoError(t, c.WriteJSON(map[string]any{"type": "run", "request_id": "slow", "input": 1}))
+	// 故意不读取任何业务帧，验证真实TCP写期限，而非替换writer的Mock。
+	select {
+	case <-stopped:
+	case <-time.After(4 * time.Second):
+		t.Fatal("慢消费者没有在写期限后释放执行")
+	}
+	require.Positive(t, emitted.Load())
 }

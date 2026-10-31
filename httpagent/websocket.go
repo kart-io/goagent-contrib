@@ -43,12 +43,23 @@ func (p *wsPeer) Close() error {
 	}
 	return nil
 }
+func (p *wsPeer) validateEvent(e Event, data []byte) error {
+	frame, err := json.Marshal(map[string]any{"type": "event", "run_id": e.RunID, "event": json.RawMessage(data)})
+	if err != nil {
+		return err
+	}
+	if int64(len(frame)) > p.h.cfg.MaxEventBytes {
+		return failure("output_too_large", "WebSocket 事件封装超出容量", nil)
+	}
+	return nil
+}
 func (p *wsPeer) enqueue(payload any, before func()) error {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
 	if int64(len(data)) > p.h.cfg.MaxEventBytes {
+		_ = p.Close()
 		return failure("output_too_large", "WebSocket 消息超出容量", nil)
 	}
 	p.mu.Lock()
@@ -234,7 +245,7 @@ func (h *Handler) serveWS(w http.ResponseWriter, r *http.Request) {
 		}
 		switch message.Type {
 		case "run":
-			if message.RequestID == "" || message.RunID != "" || len(message.Input) == 0 || bytes.Equal(bytes.TrimSpace(message.Input), []byte("null")) {
+			if message.RequestID == "" || len(message.RequestID) > 128 || message.RunID != "" || len(message.Input) == 0 || bytes.Equal(bytes.TrimSpace(message.Input), []byte("null")) {
 				p.problem(message.RequestID, failure("invalid_request", "run 必须提供 request_id 和非空 input", nil))
 				continue
 			}
@@ -254,6 +265,8 @@ func (h *Handler) serveWS(w http.ResponseWriter, r *http.Request) {
 			o, err := h.start(ctx, RunRequest{Input: input, Source: "ws"}, func(e Event, data []byte) error {
 				return p.enqueue(map[string]any{"type": "event", "run_id": e.RunID, "event": json.RawMessage(data)}, nil)
 			}, false, func(o *owner) error {
+				o.validateFrame = p.validateEvent
+				o.abortTransport = func() { _ = p.Close() }
 				return p.enqueue(map[string]any{"type": "accepted", "schema_version": 1, "request_id": message.RequestID, "run_id": o.req.ID}, nil)
 			})
 			if err != nil {

@@ -90,6 +90,9 @@ func New(cfg Config) (*Handler, error) {
 	if cfg.MaxInputBytes < 0 || cfg.MaxEventBytes < 0 || cfg.MaxActiveRuns < 0 {
 		return nil, errors.New("httpagent: 容量配置不能为负数")
 	}
+	if cfg.MaxEventBytes > 0 && cfg.MaxEventBytes < 512 {
+		return nil, errors.New("事件容量必须至少为512字节，以容纳协议错误终态")
+	}
 	if cfg.MaxInputBytes == 0 {
 		cfg.MaxInputBytes = 1 << 20
 	}
@@ -204,6 +207,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-GoAgent-Run-ID", o.req.ID)
 	select {
 	case <-o.ready:
+		o.waitNotice(r.Context())
 		h.respondResult(w, o)
 	case <-o.unconfirmed:
 		h.writeProblem(w, 504, o.req.ID, failure("execution_unconfirmed", "执行尚未确认退出，不应自动重新提交", nil))

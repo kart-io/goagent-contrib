@@ -154,3 +154,18 @@ func TestOversizedTrailingBodyIs413(t *testing.T) {
 	defer server.Close()
 	require.Equal(t, 413, post(t, server, "/invoke", `{"input":1}`+strings.Repeat(" ", 40)).StatusCode)
 }
+
+type opaqueWriter struct{ http.ResponseWriter }
+
+func TestUnsupportedWriterRejectedBeforeFactory(t *testing.T) {
+	var factories atomic.Int32
+	h, err := New(Config{Factory: func(ctx context.Context, r RunRequest) (Binding, Cleanup, error) {
+		factories.Add(1)
+		return answerFactory(ctx, r)
+	}})
+	require.NoError(t, err)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { h.ServeHTTP(opaqueWriter{w}, r) }))
+	defer server.Close()
+	require.Equal(t, 501, post(t, server, "/stream", `{"input":1}`).StatusCode)
+	require.Zero(t, factories.Load())
+}

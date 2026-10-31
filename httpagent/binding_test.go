@@ -91,7 +91,9 @@ func (p toolPlugin) Contribute(context.Context, *plugin.Env) (plugin.Contributio
 }
 
 // 真正运行 Builder、Plugin、Provider 和工具，仅模型响应由本地 HTTP 服务脚本化。
-func TestNativeKeepsPluginToolExecution(t *testing.T) {
+func probeClient(t *testing.T) *providers.OpenAIProvider {
+	t.Helper()
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request struct {
 			Stream   bool          `json:"stream"`
@@ -120,11 +122,16 @@ func TestNativeKeepsPluginToolExecution(t *testing.T) {
 		}
 		fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
-	defer server.Close()
+	t.Cleanup(server.Close)
 	client, err := providers.NewOpenAIWithOptions(llm.WithAPIKey("local-probe"), llm.WithModel("probe"), llm.WithBaseURL(server.URL))
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	return client
+}
+func TestNativeKeepsPluginToolExecution(t *testing.T) {
+	client := probeClient(t)
 	var invoked atomic.Int32
 	tool := tools.NewBaseTool("probe_tool", "探针工具", `{"type":"object","properties":{}}`, func(context.Context, *interfaces.ToolInput) (*interfaces.ToolOutput, error) {
 		invoked.Add(1)

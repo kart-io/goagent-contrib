@@ -14,6 +14,12 @@ import (
 )
 
 type owner struct {
+	prepared, noticeDone chan struct{}
+	noticeBudget         <-chan struct{}
+	noteDone             chan struct{}
+	validateFrame        func(Event, []byte) error
+	abortTransport       func()
+
 	outcomeMu sync.Mutex
 	frozen    bool
 
@@ -51,7 +57,10 @@ func (o *owner) note() {
 		if o.runReturned {
 			return
 		}
+		done := make(chan struct{})
+		o.noteDone = done
 		o.waitTimer = time.AfterFunc(o.h.cfg.DrainTimeout, func() {
+			defer close(done)
 			o.timerMu.Lock()
 			ended := o.runReturned
 			o.timerMu.Unlock()
@@ -66,13 +75,19 @@ func (o *owner) note() {
 }
 func (o *owner) returned() {
 	o.timerMu.Lock()
-	o.runReturned = true
-	if o.waitTimer != nil {
-		o.waitTimer.Stop()
+	defer o.timerMu.Unlock()
+	if o.runReturned {
+		return
 	}
-	o.timerMu.Unlock()
+	o.runReturned = true
+	if o.waitTimer != nil && o.waitTimer.Stop() {
+		close(o.noteDone)
+	}
 }
 func (h *Handler) reserve(parent context.Context, req RunRequest, sink func(Event, []byte) error) (*owner, error) {
+	if len(req.ID) > 128 {
+		return nil, failure("invalid_request", "运行 ID 过长", nil)
+	}
 	h.mu.Lock()
 	if h.closing {
 		h.mu.Unlock()
@@ -90,7 +105,7 @@ func (h *Handler) reserve(parent context.Context, req RunRequest, sink func(Even
 		return nil, failure("busy", "此运行仍在执行", nil)
 	}
 	ctx, cancel := context.WithTimeout(parent, h.cfg.Timeout)
-	o := &owner{h: h, req: req, ctx: ctx, cancel: cancel, sink: sink, ready: make(chan struct{}), executionDone: make(chan struct{}), finished: make(chan struct{}), unconfirmed: make(chan struct{})}
+	o := &owner{h: h, req: req, ctx: ctx, cancel: cancel, sink: sink, ready: make(chan struct{}), executionDone: make(chan struct{}), finished: make(chan struct{}), unconfirmed: make(chan struct{}), prepared: make(chan struct{}), noticeDone: make(chan struct{})}
 	h.runs[req.ID] = o
 	h.signalLocked()
 	h.mu.Unlock()
@@ -107,11 +122,35 @@ func (h *Handler) start(parent context.Context, req RunRequest, sink func(Event,
 }
 func (o *owner) finish() {
 	o.cancel()
+	o.timerMu.Lock()
+	pending := o.noteDone
+	o.timerMu.Unlock()
+	if pending != nil {
+		<-pending
+	}
 	o.h.mu.Lock()
 	delete(o.h.runs, o.req.ID)
 	o.h.signalLocked()
 	o.h.mu.Unlock()
 	close(o.finished)
+}
+func (o *owner) waitNotice(ctx context.Context) {
+	select {
+	case <-o.noticeDone:
+	case <-o.noticeBudget:
+	case <-ctx.Done():
+	}
+}
+func cloneOutput(out *Output) *Output {
+	if out == nil {
+		return nil
+	}
+	data, _ := json.Marshal(out)
+	var cloned Output
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	_ = dec.Decode(&cloned)
+	return &cloned
 }
 
 // Run 供已持久接纳的 worker 使用同一执行管道。ID 由宿主接纳记录提供。
@@ -125,7 +164,8 @@ func (h *Handler) Run(ctx context.Context, req RunRequest) (*Output, error) {
 	}
 	select {
 	case <-o.ready:
-		return o.out, o.err
+		o.waitNotice(ctx)
+		return cloneOutput(o.out), o.err
 	case <-o.unconfirmed:
 		return nil, failure("execution_unconfirmed", "执行尚未确认退出", nil)
 	case <-ctx.Done():
@@ -156,6 +196,11 @@ func (o *owner) event(ev builder.AgentEvent) (Event, []byte, error) {
 	}
 	if int64(len(data)) > o.h.cfg.MaxEventBytes {
 		return Event{}, nil, failure("output_too_large", "输出事件超出容量限制", nil)
+	}
+	if o.validateFrame != nil {
+		if err := o.validateFrame(e, data); err != nil {
+			return Event{}, nil, err
+		}
 	}
 	return e, data, nil
 }
@@ -220,6 +265,7 @@ func (o *owner) work(stream bool, before func(*owner) error) {
 			runErr = failure("unsupported_capability", "此执行绑定不支持流式", nil)
 			return
 		}
+		close(o.prepared)
 		output, runErr = binding.Run(ctx, o.req.Input, o.emit)
 	}()
 	stop()
@@ -237,7 +283,11 @@ func (o *owner) work(stream bool, before func(*owner) error) {
 	e, data, err := o.event(ev)
 	if err != nil {
 		runErr = err
-		e, data, _ = o.event(builder.AgentEvent{Type: "error", Error: err})
+		e, data, err = o.event(builder.AgentEvent{Type: "error", Error: err})
+		if err != nil {
+			o.h.report(o.req.ID, "encode_terminal", err)
+			data = nil
+		}
 	}
 	if runErr == nil {
 		var frozen Event
@@ -258,27 +308,6 @@ func (o *owner) work(stream bool, before func(*owner) error) {
 	o.err = runErr
 	o.frozen = true
 	o.outcomeMu.Unlock()
-	if o.sink != nil {
-		if err = o.sink(e, data); err != nil {
-			o.h.report(o.req.ID, "transport", err)
-		}
-	}
-	close(o.ready)
-	if cleanup != nil {
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(o.ctx), o.h.cfg.CleanupTimeout)
-		timer := context.AfterFunc(ctx, func() { o.h.report(o.req.ID, "cleanup", ctx.Err()) })
-		func() {
-			defer func() {
-				if p := recover(); p != nil {
-					o.h.report(o.req.ID, "cleanup", panicError(p))
-				}
-			}()
-			o.h.report(o.req.ID, "cleanup", cleanup(ctx))
-		}()
-		timer()
-		cancel()
-	}
-	close(o.executionDone)
 	kind := "run.completed"
 	var payload any = o.out
 	if o.err != nil {
@@ -288,7 +317,54 @@ func (o *owner) work(stream bool, before func(*owner) error) {
 		}
 		payload = map[string]any{"error": classify(o.err)}
 	}
+	// 在公开结果之前冻结通知快照；通知与 cleanup 独立，但都属于本运行。
+	notice := o.lifecycle(kind, payload)
 	if started {
-		o.h.publish(o, o.lifecycle(kind, payload))
+		notifyCtx, notifyCancel := context.WithTimeout(context.WithoutCancel(o.ctx), o.h.cfg.DeliveryBudget)
+		o.noticeBudget = notifyCtx.Done()
+		go func() { defer close(o.noticeDone); defer notifyCancel(); o.h.publishContext(notifyCtx, o, notice) }()
+	} else {
+		close(o.noticeDone)
 	}
+	if o.sink != nil {
+		if data == nil {
+			if o.abortTransport != nil {
+				o.abortTransport()
+			}
+		} else if err = o.sink(e, data); err != nil {
+			o.h.report(o.req.ID, "transport", err)
+			if o.abortTransport != nil {
+				o.abortTransport()
+			}
+		}
+	}
+	close(o.ready)
+	if cleanup != nil {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(o.ctx), o.h.cfg.CleanupTimeout)
+		cleanupReturned, reportDone := make(chan struct{}), make(chan struct{})
+		go func() {
+			defer close(reportDone)
+			select {
+			case <-ctx.Done():
+				o.h.report(o.req.ID, "cleanup", ctx.Err())
+			case <-cleanupReturned:
+				if ctx.Err() != nil {
+					o.h.report(o.req.ID, "cleanup", ctx.Err())
+				}
+			}
+		}()
+		func() {
+			defer func() {
+				if p := recover(); p != nil {
+					o.h.report(o.req.ID, "cleanup_result", panicError(p))
+				}
+			}()
+			o.h.report(o.req.ID, "cleanup_result", cleanup(ctx))
+		}()
+		close(cleanupReturned)
+		<-reportDone
+		cancel()
+	}
+	close(o.executionDone)
+	<-o.noticeDone
 }

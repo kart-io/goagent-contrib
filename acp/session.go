@@ -34,6 +34,9 @@ type Session struct {
 	turnCancel context.CancelFunc
 	closed     bool
 
+	// loop 是正在消费事件流的 prompt 的发件箱；非空时本会话的通知都由该 prompt 的 goroutine 发出。
+	loop atomic.Pointer[outbox]
+
 	pipeline *tools.Pipeline
 	calls    *callTracker
 	nextCall atomic.Int64
@@ -79,8 +82,46 @@ func (s *Session) FileSystem() env.FileSystem { return s.fs }
 // Executor 返回命令执行器：客户端支持终端时经编辑器执行，否则在本地执行。
 func (s *Session) Executor() env.Executor { return s.exec }
 
+// update 发送一条会话通知。prompt 正在消费事件流时交给它发送并等待发出，使通知顺序与事件顺序一致。
 func (s *Session) update(ctx context.Context, u acpsdk.SessionUpdate) error {
+	if ob := s.loop.Load(); ob != nil {
+		if ok, err := ob.send(ctx, u); ok {
+			return err
+		}
+	}
+	return s.send(ctx, u)
+}
+
+// send 直接发送通知，只由持有发件箱的 prompt 或没有 prompt 消费事件时使用。
+func (s *Session) send(ctx context.Context, u acpsdk.SessionUpdate) error {
 	return s.conn.client().SessionUpdate(ctx, acpsdk.SessionNotification{SessionId: acpsdk.SessionId(s.id), Update: u})
+}
+
+// outbox 把钩子的通知交给 prompt 的事件循环发送。
+type outbox struct {
+	reqs chan outMsg
+	done chan struct{} // 事件循环不再接收时关闭
+}
+
+type outMsg struct {
+	ctx context.Context
+	u   acpsdk.SessionUpdate
+	res chan error
+}
+
+func newOutbox() *outbox { return &outbox{reqs: make(chan outMsg), done: make(chan struct{})} }
+
+// send 返回 false 表示事件循环已退出，调用方应直接发送；事件循环接收后必定回复。
+func (o *outbox) send(ctx context.Context, u acpsdk.SessionUpdate) (bool, error) {
+	m := outMsg{ctx: ctx, u: u, res: make(chan error, 1)}
+	select {
+	case o.reqs <- m:
+		return true, <-m.res
+	case <-o.done:
+		return false, nil
+	case <-ctx.Done():
+		return true, ctx.Err()
+	}
 }
 
 // startTurn 登记 prompt 的取消函数并取消上一个 prompt；会话已关闭时返回 false。

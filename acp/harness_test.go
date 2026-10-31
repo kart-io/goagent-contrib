@@ -8,7 +8,6 @@ import (
 	"slices"
 	"sync"
 	"testing"
-	"time"
 
 	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/kart-io/goagent/builder"
@@ -33,8 +32,7 @@ type fakeEditor struct {
 	// terminal 决定终端命令的输出与退出码；hang 为真时 wait_for_exit 阻塞到请求取消。
 	terminal  func(acpsdk.CreateTerminalRequest) (output string, exit int)
 	hang      bool
-	signal    bool          // 为真时 wait_for_exit 只返回信号而无退出码
-	delay     time.Duration // wait_for_exit 先等待的时长
+	signal    bool // 为真时 wait_for_exit 只返回信号而无退出码
 	created   []acpsdk.CreateTerminalRequest
 	termCalls []string
 }
@@ -107,18 +105,11 @@ func (e *fakeEditor) WaitForTerminalExit(ctx context.Context, _ acpsdk.WaitForTe
 	e.record("wait")
 	e.mu.Lock()
 	hang := e.hang
-	signal, delay := e.signal, e.delay
+	signal := e.signal
 	e.mu.Unlock()
 	if hang {
 		<-ctx.Done()
 		return acpsdk.WaitForTerminalExitResponse{}, ctx.Err()
-	}
-	if delay > 0 {
-		select {
-		case <-time.After(delay):
-		case <-ctx.Done():
-			return acpsdk.WaitForTerminalExitResponse{}, ctx.Err()
-		}
 	}
 	if signal {
 		return acpsdk.WaitForTerminalExitResponse{Signal: acpsdk.Ptr("SIGKILL")}, nil
@@ -210,9 +201,10 @@ func requireCode(t *testing.T, err error, code int) {
 	require.Equal(t, code, re.Code, "%v", err)
 }
 
-// turn 是一次模型请求的结果：parts 逐块作为增量发出；wait 为真时阻塞到 ctx 结束。
+// turn 是一次模型请求的结果：parts 逐块作为增量发出，tail 随最后一块（带工具调用）发出；wait 为真时阻塞到 ctx 结束。
 type turn struct {
 	parts []string
+	tail  string
 	calls []llm.ToolCall
 	wait  bool
 }
@@ -284,7 +276,8 @@ func (m *scriptModel) CompleteToolsStream(ctx context.Context, req *llm.Completi
 		content += p
 		ch <- &llm.StreamChunk{Delta: p, Content: content}
 	}
-	last := &llm.StreamChunk{Content: content, Done: true, ToolCalls: t.calls, FinishReason: "stop", Usage: &llm.Usage{TotalTokens: 2}}
+	content += t.tail
+	last := &llm.StreamChunk{Delta: t.tail, Content: content, Done: true, ToolCalls: t.calls, FinishReason: "stop", Usage: &llm.Usage{TotalTokens: 2}}
 	if len(t.calls) > 0 {
 		last.FinishReason = "tool_calls"
 	}

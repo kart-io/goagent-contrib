@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	acpsdk "github.com/coder/acp-go-sdk"
+	"github.com/kart-io/goagent/builder"
 )
 
 // Prompt 执行一轮对话。被取消（session/cancel、session/close、同会话的新 prompt、连接断开）时返回 cancelled 而非错误，这是协议要求。
@@ -42,13 +43,36 @@ func (c *conn) Prompt(ctx context.Context, p acpsdk.PromptRequest) (acpsdk.Promp
 		}
 		return acpsdk.PromptResponse{}, internalError("执行 Agent", err)
 	}
-	for ev := range events {
+	// 本轮的通知都由这里发出：钩子经发件箱交来的通知在取下一个事件前发送，
+	// 因此 builder 发出 tool_start 后钩子才发的 tool_call 必然排在之前的文本之后。
+	// 先于 endTurn 停止接收，之后的通知直接发送。
+	ob := newOutbox()
+	s.loop.Store(ob)
+	defer func() {
+		s.loop.Store(nil)
+		close(ob.done)
+	}()
+	for {
+		var ev builder.AgentEvent
+		select {
+		case m := <-ob.reqs:
+			m.res <- s.send(m.ctx, m.u)
+			continue
+		case e, ok := <-events:
+			if !ok {
+				if ctx.Err() != nil {
+					return cancelled, nil
+				}
+				return acpsdk.PromptResponse{}, internalError("执行 Agent", errors.New("事件流在 done 之前结束"))
+			}
+			ev = e
+		}
 		switch ev.Type {
 		case "text":
 			if ev.Delta == "" {
 				continue
 			}
-			if err := s.update(ctx, acpsdk.UpdateAgentMessageText(ev.Delta)); err != nil && ctx.Err() == nil {
+			if err := s.send(ctx, acpsdk.UpdateAgentMessageText(ev.Delta)); err != nil && ctx.Err() == nil {
 				return acpsdk.PromptResponse{}, internalError("发送回答", err)
 			}
 		case "error":
@@ -64,10 +88,6 @@ func (c *conn) Prompt(ctx context.Context, p acpsdk.PromptRequest) (acpsdk.Promp
 			return acpsdk.PromptResponse{StopReason: acpsdk.StopReasonEndTurn}, nil
 		}
 	}
-	if ctx.Err() != nil {
-		return cancelled, nil
-	}
-	return acpsdk.PromptResponse{}, internalError("执行 Agent", errors.New("事件流在 done 之前结束"))
 }
 
 // promptText 把内容块拼成 Agent 输入：文本原样，资源链接只写 URI，嵌入的文本资源以 <uri> 加内容附上。

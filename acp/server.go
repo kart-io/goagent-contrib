@@ -201,11 +201,3 @@ func (c *conn) SetSessionConfigOption(context.Context, acpsdk.SetSessionConfigOp
 func (c *conn) ResumeSession(context.Context, acpsdk.ResumeSessionRequest) (acpsdk.ResumeSessionResponse, error) {
 	return acpsdk.ResumeSessionResponse{}, acpsdk.NewMethodNotFound("session/resume")
 }
-
-func (c *conn) LoadSession(context.Context, acpsdk.LoadSessionRequest) (acpsdk.LoadSessionResponse, error) {
-	return acpsdk.LoadSessionResponse{}, acpsdk.NewMethodNotFound(acpsdk.AgentMethodSessionLoad)
-}
-
-func (c *conn) ListSessions(context.Context, acpsdk.ListSessionsRequest) (acpsdk.ListSessionsResponse, error) {
-	return acpsdk.ListSessionsResponse{}, acpsdk.NewMethodNotFound(acpsdk.AgentMethodSessionList)
-}

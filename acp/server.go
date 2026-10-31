@@ -215,16 +215,18 @@ func (c *conn) session(id acpsdk.SessionId) (*Session, error) {
 	return s, nil
 }
 
-// CloseSession 先注销会话使新 prompt 得到"不存在"，再取消进行中的 prompt 并关闭会话。
+// CloseSession 取消进行中的 prompt 并关闭会话，之后才注销；等待期间会话仍登记，同 ID 的 session/load 被拒绝。
 func (c *conn) CloseSession(_ context.Context, p acpsdk.CloseSessionRequest) (acpsdk.CloseSessionResponse, error) {
-	c.mu.Lock()
-	s, ok := c.sessions[string(p.SessionId)]
-	delete(c.sessions, string(p.SessionId))
-	c.mu.Unlock()
-	if !ok {
-		return acpsdk.CloseSessionResponse{}, missing(p.SessionId)
+	s, err := c.session(p.SessionId)
+	if err != nil {
+		return acpsdk.CloseSessionResponse{}, err
 	}
 	s.close()
+	c.mu.Lock()
+	if c.sessions[string(p.SessionId)] == s {
+		delete(c.sessions, string(p.SessionId))
+	}
+	c.mu.Unlock()
 	return acpsdk.CloseSessionResponse{}, nil
 }
 

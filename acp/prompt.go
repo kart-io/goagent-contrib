@@ -45,6 +45,7 @@ func (c *conn) Prompt(ctx context.Context, p acpsdk.PromptRequest) (acpsdk.Promp
 	}
 	// 本轮的通知都由这里发出：钩子经发件箱交来的通知在取下一个事件前发送，
 	// 因此 builder 发出 tool_start 后钩子才发的 tool_call 必然排在之前的文本之后。
+	// 这依赖 builder 事件通道容量为 1（builder/events.go）：容量更大时文本与 tool_start 可同在缓冲中。
 	// 先于 endTurn 停止接收，之后的通知直接发送。
 	ob := newOutbox()
 	s.loop.Store(ob)

@@ -5,12 +5,17 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
 
 // Config 的零值字段使用文档默认值，负数配置在构造时拒绝。
 type Config struct {
+	Receivers        map[string]Receiver
+	Delivery         DeliverySink
+	AdmissionTimeout time.Duration
+
 	Factory                                                                        Factory
 	Timeout, DrainTimeout, CleanupTimeout, WriteTimeout, Heartbeat, DeliveryBudget time.Duration
 	MaxInputBytes, MaxEventBytes                                                   int64
@@ -42,7 +47,7 @@ func New(cfg Config) (*Handler, error) {
 	defaults := []struct {
 		p     *time.Duration
 		value time.Duration
-	}{{&cfg.Timeout, 5 * time.Minute}, {&cfg.DrainTimeout, 5 * time.Second}, {&cfg.CleanupTimeout, 5 * time.Second}, {&cfg.WriteTimeout, 10 * time.Second}, {&cfg.Heartbeat, 15 * time.Second}, {&cfg.DeliveryBudget, 5 * time.Second}}
+	}{{&cfg.AdmissionTimeout, 2 * time.Second}, {&cfg.Timeout, 5 * time.Minute}, {&cfg.DrainTimeout, 5 * time.Second}, {&cfg.CleanupTimeout, 5 * time.Second}, {&cfg.WriteTimeout, 10 * time.Second}, {&cfg.Heartbeat, 15 * time.Second}, {&cfg.DeliveryBudget, 5 * time.Second}}
 	for _, d := range defaults {
 		if *d.p < 0 {
 			return nil, errors.New("httpagent: 超时配置不能为负数")
@@ -51,6 +56,17 @@ func New(cfg Config) (*Handler, error) {
 			*d.p = d.value
 		}
 	}
+	receivers := make(map[string]Receiver, len(cfg.Receivers))
+	for name, receiver := range cfg.Receivers {
+		if name == "" || strings.Contains(name, "/") || receiver.Decode == nil || (receiver.Mode != "inline" && receiver.Mode != "queued") || (receiver.Mode == "queued" && receiver.Acceptor == nil) {
+			return nil, errors.New("Webhook 接收器必须明确配置模式、解码器与持久接纳器")
+		}
+		if receiver.AcceptStatus != 0 && receiver.AcceptStatus != 200 && receiver.AcceptStatus != 202 {
+			return nil, errors.New("接纳应答状态仅支持200或202")
+		}
+		receivers[name] = receiver
+	}
+	cfg.Receivers = receivers
 	if cfg.MaxInputBytes < 0 || cfg.MaxEventBytes < 0 || cfg.MaxActiveRuns < 0 {
 		return nil, errors.New("httpagent: 容量配置不能为负数")
 	}
@@ -116,7 +132,7 @@ func (h *Handler) report(run, stage string, err error) {
 	defer cancel()
 	h.cfg.Report(ctx, Report{RunID: run, Stage: stage, Err: err})
 }
-func (h *Handler) observe(o *owner, e RunEvent) {
+func (h *Handler) observe(ctx context.Context, o *owner, e RunEvent) {
 	if h.cfg.Observer == nil {
 		return
 	}
@@ -125,13 +141,15 @@ func (h *Handler) observe(o *owner, e RunEvent) {
 			h.report(o.req.ID, "observer", panicError(p))
 		}
 	}()
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(o.ctx), h.cfg.DeliveryBudget)
-	defer cancel()
 	if err := h.cfg.Observer(ctx, e); err != nil {
 		h.report(o.req.ID, "observer", err)
 	}
 }
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/webhooks/") {
+		h.serveWebhook(w, r)
+		return
+	}
 	if r.URL.Path != "/invoke" && r.URL.Path != "/stream" {
 		writeProblem(w, 404, "", failure("not_found", "入口不存在", nil))
 		return
@@ -162,14 +180,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-GoAgent-Run-ID", o.req.ID)
 	select {
 	case <-o.ready:
-		if o.err != nil {
-			h.writeProblem(w, statusOf(o.err), o.req.ID, classify(o.err))
-		} else {
-			h.writeJSON(w, 200, map[string]any{"schema_version": 1, "run_id": o.req.ID, "output": o.out})
-		}
+		h.respondResult(w, o)
 	case <-o.unconfirmed:
 		h.writeProblem(w, 504, o.req.ID, failure("execution_unconfirmed", "执行尚未确认退出，不应自动重新提交", nil))
 	case <-r.Context().Done():
 		o.cancel()
+	}
+}
+
+func (h *Handler) respondResult(w http.ResponseWriter, o *owner) {
+	w.Header().Set("X-GoAgent-Run-ID", o.req.ID)
+	if o.err != nil {
+		h.writeProblem(w, statusOf(o.err), o.req.ID, classify(o.err))
+	} else {
+		h.writeJSON(w, 200, map[string]any{"schema_version": 1, "run_id": o.req.ID, "output": o.out})
 	}
 }

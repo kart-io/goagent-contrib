@@ -60,7 +60,7 @@ func (o *owner) returned() {
 	}
 	o.timerMu.Unlock()
 }
-func (h *Handler) start(parent context.Context, req RunRequest, sink func(Event, []byte) error, stream bool, before func(*owner) error) (*owner, error) {
+func (h *Handler) reserve(parent context.Context, req RunRequest, sink func(Event, []byte) error) (*owner, error) {
 	h.mu.Lock()
 	if h.closing {
 		h.mu.Unlock()
@@ -82,8 +82,24 @@ func (h *Handler) start(parent context.Context, req RunRequest, sink func(Event,
 	h.runs[req.ID] = o
 	h.signalLocked()
 	h.mu.Unlock()
+	return o, nil
+}
+
+func (h *Handler) start(parent context.Context, req RunRequest, sink func(Event, []byte) error, stream bool, before func(*owner) error) (*owner, error) {
+	o, err := h.reserve(parent, req, sink)
+	if err != nil {
+		return nil, err
+	}
 	go o.work(stream, before)
 	return o, nil
+}
+func (o *owner) finish() {
+	o.cancel()
+	o.h.mu.Lock()
+	delete(o.h.runs, o.req.ID)
+	o.h.signalLocked()
+	o.h.mu.Unlock()
+	close(o.finished)
 }
 
 // Run 供已持久接纳的 worker 使用同一执行管道。ID 由宿主接纳记录提供。
@@ -149,18 +165,12 @@ func (o *owner) lifecycle(kind string, data any) RunEvent {
 	return RunEvent{SchemaVersion: 1, EventID: uuid.NewString(), RunID: o.req.ID, EventType: kind, OccurredAt: time.Now().UTC(), Data: json.RawMessage(raw)}
 }
 func (o *owner) work(stream bool, before func(*owner) error) {
-	defer func() {
-		o.cancel()
-		o.h.mu.Lock()
-		delete(o.h.runs, o.req.ID)
-		o.h.signalLocked()
-		o.h.mu.Unlock()
-		close(o.finished)
-	}()
+	defer o.finish()
 	stop := context.AfterFunc(o.ctx, o.note)
 	var cleanup Cleanup
 	var output *builder.AgentOutput
 	var runErr error
+	started := false
 	func() {
 		defer func() {
 			if p := recover(); p != nil {
@@ -177,7 +187,8 @@ func (o *owner) work(stream bool, before func(*owner) error) {
 			runErr = err
 			return
 		}
-		o.h.observe(o, o.lifecycle("run.started", map[string]any{"source": o.req.Source, "webhook": o.req.Webhook}))
+		started = true
+		o.h.publish(o, o.lifecycle("run.started", map[string]any{"source": o.req.Source, "webhook": o.req.Webhook}))
 		ctx := context.WithValue(o.ctx, producerKey{}, func() { o.note() })
 		binding, release, err := o.h.cfg.Factory(ctx, o.req)
 		cleanup = release
@@ -257,5 +268,7 @@ func (o *owner) work(stream bool, before func(*owner) error) {
 		}
 		payload = map[string]any{"error": classify(o.err)}
 	}
-	o.h.observe(o, o.lifecycle(kind, payload))
+	if started {
+		o.h.publish(o, o.lifecycle(kind, payload))
+	}
 }

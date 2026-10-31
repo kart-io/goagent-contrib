@@ -18,6 +18,11 @@
 
 `retrieval`、`document`、`tools/practical`、`tools/database` 迁自 goagent v0.16.1（goagent v0.17.0 起删除），行为与原包一致；拆分后的差异：Cohere 与 Vertex AI 嵌入器须空导入对应子包才能经 `retrieval.NewEmbedder` 创建，PDF 加载器的包名为 `pdf`。
 
+## HTTP Agent 文档
+
+- [使用指南](httpagent/docs/USER_GUIDE.md)：HTTP/SSE/WS、Web页面案例、双向Webhook、Hooks与框架接入。
+- [设计](httpagent/docs/DESIGN.md)、[API参考](httpagent/docs/API_REFERENCE.md)、[文档验证](httpagent/docs/VERIFICATION.md)。
+
 ## durable/pgstore
 
 ```go

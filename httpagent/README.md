@@ -2,6 +2,15 @@
 
 将 GoAgent 暴露为 HTTP JSON、SSE、WebSocket 服务，并提供双向 Webhook 和独立生命周期观察者。独立模块；依赖 GoAgent v0.32.2，主库不依赖本模块。
 
+## 文档入口
+
+- [使用指南](docs/USER_GUIDE.md)：离线运行、完整宿主程序、原生工具、Webhook/worker、框架接入、取消与排查。
+- [设计文档](docs/DESIGN.md)：模块边界、执行绑定、所有者状态、时序图、接纳/通知与停服责任。
+- [API与协议参考](docs/API_REFERENCE.md)：全部Config字段、默认值、公开接口、JSON/SSE/WS帧及错误映射。
+- [文档验证](docs/VERIFICATION.md)：代码块编译、链接检查和源码核对范围。
+
+安装已推送版本：`go get github.com/kart-io/goagent-contrib/httpagent@v0.0.0-20261031151618-cfb3e85df18a`。尚未打模块tag；该版本无需本地workspace。
+
 ## 装配
 
 ```go
@@ -74,7 +83,7 @@ type WebSocketUpgrader interface {
 
 两种装配方式：
 
-1. 宿主保留 net/http：将适配器传入 `Config.WebSocketUpgrader`，也可使用 `WebSocketUpgraderFunc` 包装函数。`WebSocketUpgradeOptions` 包含 `Subprotocol` 和 `HandshakeTimeout`。Handler 在调用升级器前统一检查 goagent.v1、Origin、停服和连接容量；默认无 Origin 允许，有 Origin 要求同源，可通过 `CheckOrigin` 调整。自定义升级器必须协商指定子协议、遵守握手期限，失败时写HTTP错误并释放其资源，成功返回非空连接。
+1. 宿主保留 net/http：将适配器传入 `Config.WebSocketUpgrader`，也可使用 `WebSocketUpgraderFunc` 包装函数。`WebSocketUpgradeOptions` 包含 `Subprotocol` 和 `HandshakeTimeout`。Handler 在调用升级器前统一检查 goagent.v1、Origin、停服和连接容量；默认无 Origin 允许，有 Origin 要求单值HTTP/HTTPS且Host与请求Host匹配，可通过 `CheckOrigin` 调整。自定义升级器必须协商指定子协议、遵守握手期限，失败时写HTTP错误并释放其资源，成功返回非空连接。
 2. 框架自行升级：完成鉴权、Origin检查和 goagent.v1 协商后，调用 `h.ServeWebSocket(ctx, conn)`。此入口不依赖框架的HTTP类型；适配器将框架连接转换为 `WebSocketConn` 即可。调用阻塞至连接结束，Handler 接管连接关闭，并复用运行准入、容量、取消、心跳、清理及停服逻辑。连接/停服容量不足时返回错误并关闭已经升级的连接；升级前的握手与准入应答由宿主管理。已有连接不能交给框架和 Handler 同时读写。
 
 适配器须真实实现消息大小限制和期限，不能使用无操作方法占位。ReadText 消费控制帧、响应 Ping、触发 Pong 回调，并拒绝二进制消息；WriteText 发送一个完整文本消息。允许单reader与单writer并行，Close必须并发安全、幂等并解除阻塞读写，Ping不能同步等待Pong。框架只有context式读写接口时，需把期限和关闭正确映射为操作context的取消。

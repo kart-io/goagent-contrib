@@ -12,6 +12,11 @@ import (
 
 // Config 的零值字段使用文档默认值，负数配置在构造时拒绝。
 type Config struct {
+	MaxConnections, WSQueueEvents int
+	WSQueueBytes                  int64
+	PingInterval, PongTimeout     time.Duration
+	CheckOrigin                   func(*http.Request) bool
+
 	Receivers        map[string]Receiver
 	Delivery         DeliverySink
 	AdmissionTimeout time.Duration
@@ -47,7 +52,7 @@ func New(cfg Config) (*Handler, error) {
 	defaults := []struct {
 		p     *time.Duration
 		value time.Duration
-	}{{&cfg.AdmissionTimeout, 2 * time.Second}, {&cfg.Timeout, 5 * time.Minute}, {&cfg.DrainTimeout, 5 * time.Second}, {&cfg.CleanupTimeout, 5 * time.Second}, {&cfg.WriteTimeout, 10 * time.Second}, {&cfg.Heartbeat, 15 * time.Second}, {&cfg.DeliveryBudget, 5 * time.Second}}
+	}{{&cfg.PingInterval, 30 * time.Second}, {&cfg.PongTimeout, 60 * time.Second}, {&cfg.AdmissionTimeout, 2 * time.Second}, {&cfg.Timeout, 5 * time.Minute}, {&cfg.DrainTimeout, 5 * time.Second}, {&cfg.CleanupTimeout, 5 * time.Second}, {&cfg.WriteTimeout, 10 * time.Second}, {&cfg.Heartbeat, 15 * time.Second}, {&cfg.DeliveryBudget, 5 * time.Second}}
 	for _, d := range defaults {
 		if *d.p < 0 {
 			return nil, errors.New("httpagent: 超时配置不能为负数")
@@ -55,6 +60,21 @@ func New(cfg Config) (*Handler, error) {
 		if *d.p == 0 {
 			*d.p = d.value
 		}
+	}
+	if cfg.MaxConnections < 0 || cfg.WSQueueEvents < 0 || cfg.WSQueueBytes < 0 {
+		return nil, errors.New("WebSocket 容量不能为负数")
+	}
+	if cfg.MaxConnections == 0 {
+		cfg.MaxConnections = 128
+	}
+	if cfg.WSQueueEvents == 0 {
+		cfg.WSQueueEvents = 64
+	}
+	if cfg.WSQueueBytes == 0 {
+		cfg.WSQueueBytes = 4 << 20
+	}
+	if cfg.PongTimeout <= cfg.PingInterval {
+		return nil, errors.New("Pong 等待须大于 Ping 间隔")
 	}
 	receivers := make(map[string]Receiver, len(cfg.Receivers))
 	for name, receiver := range cfg.Receivers {
@@ -98,7 +118,7 @@ func (h *Handler) BeginShutdown() {
 	h.signalLocked()
 	h.mu.Unlock()
 	for _, o := range runs {
-		o.cancel()
+		o.requestCancel()
 	}
 	for _, c := range conns {
 		_ = c.Close()
@@ -146,6 +166,10 @@ func (h *Handler) observe(ctx context.Context, o *owner, e RunEvent) {
 	}
 }
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/ws" {
+		h.serveWS(w, r)
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/webhooks/") {
 		h.serveWebhook(w, r)
 		return

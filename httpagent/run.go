@@ -14,6 +14,9 @@ import (
 )
 
 type owner struct {
+	outcomeMu sync.Mutex
+	frozen    bool
+
 	h                                           *Handler
 	req                                         RunRequest
 	ctx                                         context.Context
@@ -29,6 +32,15 @@ type owner struct {
 	seq                                         uint64
 }
 
+func (o *owner) requestCancel() bool {
+	o.outcomeMu.Lock()
+	defer o.outcomeMu.Unlock()
+	if o.frozen {
+		return false
+	}
+	o.cancel()
+	return true
+}
 func panicError(p any) error {
 	return failure("host_panic", fmt.Sprintf("宿主执行发生 panic：%v", p), nil)
 }
@@ -237,7 +249,15 @@ func (o *owner) work(stream bool, before func(*owner) error) {
 			o.out = frozen.Output
 		}
 	}
+	o.outcomeMu.Lock()
+	if latest := o.ctx.Err(); latest != nil && runErr == nil {
+		runErr = latest
+		o.out = nil
+		e, data, _ = o.event(builder.AgentEvent{Type: "error", Error: latest})
+	}
 	o.err = runErr
+	o.frozen = true
+	o.outcomeMu.Unlock()
 	if o.sink != nil {
 		if err = o.sink(e, data); err != nil {
 			o.h.report(o.req.ID, "transport", err)

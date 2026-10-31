@@ -12,6 +12,8 @@ import (
 
 // Config 的零值字段使用文档默认值，负数配置在构造时拒绝。
 type Config struct {
+	// WebSocketUpgrader defaults to Gorilla; inject a host adapter to replace it.
+	WebSocketUpgrader             WebSocketUpgrader
 	MaxConnections, WSQueueEvents int
 	WSQueueBytes                  int64
 	PingInterval, PongTimeout     time.Duration
@@ -48,6 +50,9 @@ type Handler struct {
 func New(cfg Config) (*Handler, error) {
 	if cfg.Factory == nil {
 		return nil, errors.New("httpagent: Factory 不能为空")
+	}
+	if cfg.WebSocketUpgrader == nil {
+		cfg.WebSocketUpgrader = gorillaWebSocketUpgrader{}
 	}
 	defaults := []struct {
 		p     *time.Duration

@@ -7,10 +7,10 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
-
-	"github.com/gorilla/websocket"
 )
 
 type wsFrame struct {
@@ -23,7 +23,7 @@ type wsPeer struct {
 	ctx         context.Context
 	cancel      context.CancelFunc
 	mu          sync.Mutex
-	conn        *websocket.Conn
+	conn        WebSocketConn
 	closed      bool
 	queuedBytes int64
 	queuedCount int
@@ -110,7 +110,7 @@ func (p *wsPeer) writer(done chan<- struct{}) {
 			}
 			err := p.conn.SetWriteDeadline(time.Now().Add(p.h.cfg.WriteTimeout))
 			if err == nil {
-				err = p.conn.WriteMessage(websocket.TextMessage, f.data)
+				err = p.conn.WriteText(f.data)
 			}
 			p.releaseFrame(f)
 			f.ack <- err
@@ -118,7 +118,7 @@ func (p *wsPeer) writer(done chan<- struct{}) {
 				return
 			}
 		case <-ping.C:
-			if err := p.conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(p.h.cfg.WriteTimeout)); err != nil {
+			if err := p.conn.Ping(time.Now().Add(p.h.cfg.WriteTimeout)); err != nil {
 				return
 			}
 		}
@@ -158,73 +158,92 @@ func (p *wsPeer) watch(o *owner) {
 func (h *Handler) serveWS(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", "GET")
-		writeProblem(w, 405, "", failure("method_not_allowed", "WebSocket 握手要求 GET", nil))
+		writeProblem(w, http.StatusMethodNotAllowed, "", failure("method_not_allowed", "WebSocket 握手要求 GET", nil))
 		return
 	}
 	selected := false
-	for _, sub := range websocket.Subprotocols(r) {
-		if sub == "goagent.v1" {
-			selected = true
+	for _, value := range r.Header.Values("Sec-WebSocket-Protocol") {
+		for _, sub := range strings.Split(value, ",") {
+			if strings.TrimSpace(sub) == "goagent.v1" {
+				selected = true
+			}
 		}
 	}
 	if !selected {
 		w.Header().Set("Sec-WebSocket-Protocol", "goagent.v1")
-		writeProblem(w, 426, "", failure("unsupported_protocol", "要求 goagent.v1 子协议", nil))
+		writeProblem(w, http.StatusUpgradeRequired, "", failure("unsupported_protocol", "要求 goagent.v1 子协议", nil))
 		return
 	}
-	ctx, cancel := context.WithCancel(r.Context())
-	p := &wsPeer{h: h, ctx: ctx, cancel: cancel, queue: make(chan wsFrame, h.cfg.WSQueueEvents)}
-	h.mu.Lock()
-	if h.closing {
-		h.mu.Unlock()
-		cancel()
-		writeProblem(w, 503, "", failure("unavailable", "服务正在关闭", nil))
+	if !h.checkWebSocketOrigin(r) {
+		writeProblem(w, http.StatusForbidden, "", failure("forbidden_origin", "WebSocket Origin 不被允许", nil))
 		return
 	}
-	if len(h.connections) >= h.cfg.MaxConnections {
-		h.mu.Unlock()
-		cancel()
-		writeProblem(w, 429, "", failure("busy", "WebSocket 连接容量已满", nil))
-		return
-	}
-	h.connections[p] = struct{}{}
-	h.signalLocked()
-	h.mu.Unlock()
-	defer func() { _ = p.Close(); h.mu.Lock(); delete(h.connections, p); h.signalLocked(); h.mu.Unlock() }()
-	up := websocket.Upgrader{Subprotocols: []string{"goagent.v1"}, HandshakeTimeout: h.cfg.WriteTimeout, CheckOrigin: h.cfg.CheckOrigin}
-	c, err := up.Upgrade(w, r, nil)
+	p, err := h.reserveWebSocket(r.Context())
 	if err != nil {
+		writeProblem(w, statusOf(err), "", classify(err))
 		return
 	}
+	defer h.releaseWebSocket(p)
+	c, err := h.cfg.WebSocketUpgrader.Upgrade(w, r, WebSocketUpgradeOptions{Subprotocol: "goagent.v1", HandshakeTimeout: h.cfg.WriteTimeout})
+	if err != nil {
+		if c != nil {
+			_ = c.Close()
+		}
+		return
+	}
+	if c == nil {
+		h.report("", "websocket_upgrade", errors.New("WebSocketUpgrader returned nil connection without error"))
+		writeProblem(w, http.StatusInternalServerError, "", failure("websocket_upgrade_failed", "WebSocket 升级未返回连接", nil))
+		return
+	}
+	_ = h.runWebSocket(p, c)
+}
+
+func (h *Handler) checkWebSocketOrigin(r *http.Request) bool {
+	if h.cfg.CheckOrigin != nil {
+		return h.cfg.CheckOrigin(r)
+	}
+	origins := r.Header.Values("Origin")
+	if len(origins) == 0 {
+		return true
+	}
+	if len(origins) != 1 {
+		return false
+	}
+	origin, err := url.Parse(origins[0])
+	return err == nil && (origin.Scheme == "http" || origin.Scheme == "https") && origin.User == nil && strings.EqualFold(origin.Host, r.Host)
+}
+
+func (h *Handler) runWebSocket(p *wsPeer, c WebSocketConn) error {
+	ctx := p.ctx
 	p.mu.Lock()
-	if p.closed {
+	if p.closed || ctx.Err() != nil {
 		p.mu.Unlock()
 		_ = c.Close()
-		return
+		return ctx.Err()
 	}
 	p.conn = c
 	p.mu.Unlock()
 	c.SetReadLimit(h.cfg.MaxInputBytes)
-	if err = c.SetReadDeadline(time.Now().Add(h.cfg.PongTimeout)); err != nil {
-		return
+	if err := c.SetReadDeadline(time.Now().Add(h.cfg.PongTimeout)); err != nil {
+		return err
 	}
-	c.SetPongHandler(func(string) error { return c.SetReadDeadline(time.Now().Add(h.cfg.PongTimeout)) })
+	c.SetPongHandler(func() error { return c.SetReadDeadline(time.Now().Add(h.cfg.PongTimeout)) })
 	writerDone := make(chan struct{})
 	go p.writer(writerDone)
 	defer func() { _ = p.Close(); <-writerDone }()
 	for {
-		kind, data, err := c.ReadMessage()
+		data, err := c.ReadText()
 		if err != nil {
 			p.activeMu.Lock()
 			if p.active != nil {
 				p.active.cancel()
 			}
 			p.activeMu.Unlock()
-			return
+			return err
 		}
-		if kind != websocket.TextMessage {
-			_ = c.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseUnsupportedData, "仅支持 JSON 文本"), time.Now().Add(h.cfg.WriteTimeout))
-			return
+		if int64(len(data)) > h.cfg.MaxInputBytes {
+			return failure("input_too_large", "WebSocket 消息超出容量", nil)
 		}
 		var message struct {
 			Type      string          `json:"type"`

@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/PuerkitoBio/goquery v1.10.3
 	github.com/go-resty/resty/v2 v2.16.5
-	github.com/kart-io/goagent v0.20.0
+	github.com/kart-io/goagent v0.26.0
 	github.com/stretchr/testify v1.11.1
 	gopkg.in/yaml.v3 v3.0.1
 )

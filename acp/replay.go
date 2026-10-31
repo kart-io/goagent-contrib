@@ -16,29 +16,39 @@ func (c *conn) LoadSession(ctx context.Context, p acpsdk.LoadSessionRequest) (ac
 		return acpsdk.LoadSessionResponse{}, acpsdk.NewMethodNotFound(acpsdk.AgentMethodSessionLoad)
 	}
 	id := string(p.SessionId)
+	// 在锁内预留 ID，使并发的同 ID 加载只有一个通过检查；任何返回路径都释放预留。
 	c.mu.Lock()
-	_, opened := c.sessions[id]
+	opened := c.sessions[id] != nil || c.loading[id]
+	if !opened {
+		c.loading[id] = true
+	}
 	c.mu.Unlock()
 	if opened {
 		return acpsdk.LoadSessionResponse{}, acpsdk.NewInvalidParams(map[string]any{"error": fmt.Sprintf("acp: 会话 %q 已打开，须先 session/close", id)})
 	}
+	defer func() {
+		c.mu.Lock()
+		delete(c.loading, id)
+		c.mu.Unlock()
+	}()
 	events, err := c.srv.store.Read(ctx, id, 0)
 	if errors.Is(err, session.ErrNotFound) {
-		return acpsdk.LoadSessionResponse{}, acpsdk.NewInvalidParams(map[string]any{"error": fmt.Sprintf("acp: 会话 %q 不存在", id)})
+		return acpsdk.LoadSessionResponse{}, missing(p.SessionId)
 	}
 	if err != nil {
 		return acpsdk.LoadSessionResponse{}, internalError("读取会话日志", err)
 	}
-	s, err := c.open(ctx, id, p.Cwd, p.McpServers)
+	s, err := c.build(ctx, id, p.Cwd, p.McpServers)
 	if err != nil {
 		return acpsdk.LoadSessionResponse{}, err
 	}
+	// 回放完成后才登记，失败时无需从会话表回滚。
 	if err := s.replay(ctx, events); err != nil {
-		c.mu.Lock()
-		delete(c.sessions, id)
-		delete(c.cwds, id)
-		c.mu.Unlock()
+		s.closeRunner()
 		return acpsdk.LoadSessionResponse{}, internalError("回放会话", err)
+	}
+	if err := c.register(s); err != nil {
+		return acpsdk.LoadSessionResponse{}, err
 	}
 	return acpsdk.LoadSessionResponse{}, nil
 }

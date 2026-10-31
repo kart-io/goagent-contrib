@@ -9,7 +9,7 @@ import (
 	acpsdk "github.com/coder/acp-go-sdk"
 )
 
-// Prompt 执行一轮对话。ctx 被取消（session/cancel、同会话的新 prompt、连接断开）时返回 cancelled 而非错误，这是协议要求。
+// Prompt 执行一轮对话。被取消（session/cancel、session/close、同会话的新 prompt、连接断开）时返回 cancelled 而非错误，这是协议要求。
 func (c *conn) Prompt(ctx context.Context, p acpsdk.PromptRequest) (acpsdk.PromptResponse, error) {
 	s, err := c.session(p.SessionId)
 	if err != nil {
@@ -22,6 +22,11 @@ func (c *conn) Prompt(ctx context.Context, p acpsdk.PromptRequest) (acpsdk.Promp
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	defer context.AfterFunc(c.base, cancel)()
+	gen, ok := s.startTurn(cancel)
+	if !ok {
+		return acpsdk.PromptResponse{}, missing(p.SessionId)
+	}
+	defer s.leaveTurn(gen)
 
 	s.run.Lock()
 	defer s.run.Unlock()

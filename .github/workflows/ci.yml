@@ -17,6 +17,7 @@ jobs:
       fail-fast: false
       matrix:
         module:
+          - acp
           - document
           - document/pdf
           - durable/pgstore

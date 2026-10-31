@@ -39,7 +39,12 @@ func newSession(c *conn, id, cwd string, mcp []acpsdk.McpServer) (*Session, erro
 		return nil, fmt.Errorf("acp: 打开工作区 %q：%w", cwd, err)
 	}
 	s := &Session{id: id, cwd: cwd, mcp: mcp, conn: c, local: local}
-	s.fs = local
+	caps := c.capabilities().Fs
+	if caps.ReadTextFile || caps.WriteTextFile {
+		s.fs = &clientFS{s: s, read: caps.ReadTextFile, write: caps.WriteTextFile}
+	} else {
+		s.fs = local
+	}
 	s.exec = env.LocalExecutor{Root: cwd}
 	s.calls = newCallTracker()
 	s.pipeline = s.newPipeline()

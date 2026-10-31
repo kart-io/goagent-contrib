@@ -58,15 +58,16 @@ func TestPromptCancel(t *testing.T) {
 	h.initialize(t, acpsdk.ClientCapabilities{})
 	id := h.newSession(t, t.TempDir())
 
-	done := make(chan acpsdk.PromptResponse, 1)
+	done := make(chan promptResult, 1)
 	go func() {
 		resp, err := h.prompt(t, id, "很慢的问题")
-		require.NoError(t, err)
-		done <- resp
+		done <- promptResult{resp, err}
 	}()
 	<-model.started
 	require.NoError(t, h.client.Cancel(context.Background(), acpsdk.CancelNotification{SessionId: id}))
-	require.Equal(t, acpsdk.StopReasonCancelled, (<-done).StopReason)
+	res := <-done
+	require.NoError(t, res.err)
+	require.Equal(t, acpsdk.StopReasonCancelled, res.resp.StopReason)
 }
 
 // 新 prompt 到达时 SDK 取消旧 prompt；新的执行在旧的返回后才开始。
@@ -76,16 +77,17 @@ func TestPromptsRunOneAtATime(t *testing.T) {
 	h.initialize(t, acpsdk.ClientCapabilities{})
 	id := h.newSession(t, t.TempDir())
 
-	first := make(chan acpsdk.PromptResponse, 1)
+	first := make(chan promptResult, 1)
 	go func() {
 		resp, err := h.prompt(t, id, "第一次")
-		require.NoError(t, err)
-		first <- resp
+		first <- promptResult{resp, err}
 	}()
 	<-model.started
 	resp, err := h.prompt(t, id, "第二次")
 	require.NoError(t, err)
 	require.Equal(t, acpsdk.StopReasonEndTurn, resp.StopReason)
-	require.Equal(t, acpsdk.StopReasonCancelled, (<-first).StopReason)
+	res := <-first
+	require.NoError(t, res.err)
+	require.Equal(t, acpsdk.StopReasonCancelled, res.resp.StopReason)
 	require.Equal(t, 2, model.count())
 }

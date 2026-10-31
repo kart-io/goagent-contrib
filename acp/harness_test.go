@@ -307,6 +307,11 @@ func plainFactory(model llm.Client, seen chan<- *Session) Factory {
 
 // toolFactory 构建经 s.Pipeline() 注册工具的 Agent；ask 非 nil 时作为宿主的审批钩子追加，store 非 nil 时开启会话日志。
 func toolFactory(model llm.Client, ask tools.PreHook, store session.Store, build func(*Session) []interfaces.Tool) Factory {
+	return toolFactoryParallel(0, model, ask, store, build)
+}
+
+// toolFactoryParallel 与 toolFactory 相同，并设置同一轮工具调用的并发上限。
+func toolFactoryParallel(parallel int, model llm.Client, ask tools.PreHook, store session.Store, build func(*Session) []interfaces.Tool) Factory {
 	return func(_ context.Context, s *Session) (Runner, error) {
 		p := s.Pipeline()
 		if ask != nil {
@@ -322,7 +327,7 @@ func toolFactory(model llm.Client, ask tools.PreHook, store session.Store, build
 		if err != nil {
 			return nil, err
 		}
-		b := builder.NewSimpleBuilder(model).WithSessionID(s.ID()).WithTools(d.Tools()...).WithMaxIterations(4)
+		b := builder.NewSimpleBuilder(model).WithSessionID(s.ID()).WithTools(d.Tools()...).WithMaxIterations(4).WithParallelToolCalls(parallel)
 		if store != nil {
 			b = b.WithSessionLog(store)
 		}

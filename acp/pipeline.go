@@ -51,7 +51,7 @@ func (s *Session) announce(ctx context.Context, call *tools.Call) (tools.PreDeci
 	}
 	id := acpsdk.ToolCallId(call.CallID)
 	kind := s.conn.srv.kind(call.Tool)
-	// 替代调用以同一 CallID 再次经过管线，只更新标题与参数。
+	// 持久运行中替代调用沿用原 CallID 再次经过管线，此时只更新标题与参数；普通运行的替代调用另得编号。
 	if !s.calls.start(call.CallID) {
 		return tools.PreDecision{}, s.update(ctx, acpsdk.UpdateToolCall(id, acpsdk.WithUpdateTitle(call.Tool), acpsdk.WithUpdateKind(kind), acpsdk.WithUpdateRawInput(call.Args)))
 	}
@@ -106,13 +106,18 @@ func (s *Session) running(ctx context.Context, call *tools.Call, next func(conte
 	out, err := next(withCallID(ctx, call.CallID))
 	if err != nil {
 		s.fail(ctx, call.CallID, err.Error())
+	} else if msg, ok := tools.ArgumentErrorResult(out); ok {
+		s.fail(ctx, call.CallID, msg)
 	}
 	return out, err
 }
 
 func (s *Session) finished(ctx context.Context, call *tools.Call, out *interfaces.ToolOutput) (tools.PostDecision, error) {
 	id := acpsdk.ToolCallId(call.CallID)
-	terminals := s.calls.finish(call.CallID)
+	terminals, ok := s.calls.finish(call.CallID)
+	if !ok {
+		return tools.PostDecision{}, nil
+	}
 	if msg, rejected := tools.RejectedResult(out); rejected {
 		return tools.PostDecision{}, s.settle(ctx, acpsdk.UpdateToolCall(id,
 			acpsdk.WithUpdateStatus(acpsdk.ToolCallStatusFailed), acpsdk.WithUpdateContent(toolContent(terminals, msg))))
@@ -125,7 +130,10 @@ func (s *Session) finished(ctx context.Context, call *tools.Call, out *interface
 
 // fail 发送 failed，发送失败不影响调用方的返回值。
 func (s *Session) fail(ctx context.Context, callID, text string) {
-	terminals := s.calls.finish(callID)
+	terminals, ok := s.calls.finish(callID)
+	if !ok {
+		return
+	}
 	_ = s.settle(ctx, acpsdk.UpdateToolCall(acpsdk.ToolCallId(callID),
 		acpsdk.WithUpdateStatus(acpsdk.ToolCallStatusFailed), acpsdk.WithUpdateContent(toolContent(terminals, text))))
 }
@@ -141,7 +149,7 @@ func (s *Session) settle(ctx context.Context, u acpsdk.SessionUpdate) error {
 // endTurn 为本轮已发出 tool_call 但未结束的调用补发 failed（准入阶段出错、终止或取消时 Around 与 Post 都不运行）。
 func (s *Session) endTurn(ctx context.Context) {
 	for _, id := range s.calls.drain() {
-		s.fail(ctx, id, "调用未完成")
+		s.fail(ctx, id, "调用未执行（可能已被替代或中止）")
 	}
 }
 
@@ -197,12 +205,12 @@ func (t *callTracker) addTerminal(id, term string) []string {
 	return append([]string(nil), t.open[id]...)
 }
 
-func (t *callTracker) finish(id string) []string {
+func (t *callTracker) finish(id string) ([]string, bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	terms := t.open[id]
+	terms, ok := t.open[id]
 	delete(t.open, id)
-	return terms
+	return terms, ok
 }
 
 func (t *callTracker) drain() []string {

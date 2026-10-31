@@ -112,15 +112,16 @@ func TestApprovalCancelledByPromptCancel(t *testing.T) {
 	h.initialize(t, acpsdk.ClientCapabilities{})
 	id := h.newSession(t, t.TempDir())
 
-	done := make(chan acpsdk.PromptResponse, 1)
+	done := make(chan promptResult, 1)
 	go func() {
 		resp, err := h.prompt(t, id, "查")
-		require.NoError(t, err)
-		done <- resp
+		done <- promptResult{resp, err}
 	}()
 	<-asked
 	require.NoError(t, h.client.Cancel(context.Background(), acpsdk.CancelNotification{SessionId: id}))
-	require.Equal(t, acpsdk.StopReasonCancelled, (<-done).StopReason)
+	res := <-done
+	require.NoError(t, res.err)
+	require.Equal(t, acpsdk.StopReasonCancelled, res.resp.StopReason)
 	require.Zero(t, runs)
 	require.Equal(t, []string{"start:pending", "failed"}, ed.statuses("call-1"))
 }
@@ -180,4 +181,40 @@ func TestResultText(t *testing.T) {
 	require.Equal(t, "纯文本", resultText(&interfaces.ToolOutput{Success: true, Result: "纯文本"}))
 	require.Equal(t, `{"n":1}`, resultText(&interfaces.ToolOutput{Success: true, Result: map[string]int{"n": 1}}))
 	require.Equal(t, "", resultText(&interfaces.ToolOutput{Success: true}))
+}
+
+type promptResult struct {
+	resp acpsdk.PromptResponse
+	err  error
+}
+
+// 非持久运行中替代调用另得编号，原调用无法关联，由轮末补发 failed。
+func TestSubstitutedCallIsNumberedSeparately(t *testing.T) {
+	var runs int
+	subst := func(_ context.Context, c *tools.Call) (tools.PreDecision, error) {
+		if c.Tool != "lookup" {
+			return tools.PreDecision{}, nil
+		}
+		return tools.PreDecision{Kind: tools.PreSubstitute, Substitute: &tools.Substitution{Tool: "other", Args: map[string]any{}}}, nil
+	}
+	model := newModel(calls("lookup"), say("好"))
+	h := start(t, NewServer(toolFactory(model, subst, nil, only(echoTool("lookup", nil, ""), echoTool("other", &runs, "")))), newEditor())
+	h.initialize(t, acpsdk.ClientCapabilities{})
+	_, err := h.prompt(t, h.newSession(t, t.TempDir()), "查")
+	require.NoError(t, err)
+	require.Equal(t, 1, runs)
+	require.Equal(t, []string{"start:pending", "in_progress", "completed"}, h.editor.statuses("call-2"))
+	require.Equal(t, []string{"start:pending", "failed"}, h.editor.statuses("call-1"))
+	require.Contains(t, h.editor.lastUpdate("call-1").Content[0].Content.Content.Text.Text, "可能已被替代")
+}
+
+func TestParallelCalls(t *testing.T) {
+	model := newModel(calls("lookup", "lookup2"), say("好"))
+	h := start(t, NewServer(toolFactoryParallel(2, model, nil, nil, only(echoTool("lookup", nil, ""), echoTool("lookup2", nil, "")))), newEditor())
+	h.initialize(t, acpsdk.ClientCapabilities{})
+	_, err := h.prompt(t, h.newSession(t, t.TempDir()), "查两个")
+	require.NoError(t, err)
+	for _, id := range []string{"call-1", "call-2"} {
+		require.Equal(t, []string{"start:pending", "in_progress", "completed"}, h.editor.statuses(id), id)
+	}
 }

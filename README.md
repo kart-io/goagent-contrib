@@ -50,8 +50,8 @@ CI 对每个模块在 Go 1.25 下运行 vet、`go test -race` 与 golangci-lint�
 
 ### 版本
 
-依赖 goagent v0.26.0 及以上（`core/session/sessiontest` 与 `session.DurableLockName` 自该版本提供）。模块 tag 形如 `durable/pgstore/v0.1.0`：
+依赖 goagent v0.26.0 及以上（`core/session/sessiontest` 与 `session.DurableLockName` 自该版本提供）。模块 tag 形如 `durable/pgstore/v0.2.0`：
 
 ```bash
-go get github.com/kart-io/goagent-contrib/durable/pgstore@v0.1.0
+go get github.com/kart-io/goagent-contrib/durable/pgstore@v0.2.0
 ```

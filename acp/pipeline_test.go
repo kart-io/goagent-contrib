@@ -271,3 +271,26 @@ func TestToolArgumentErrorReportsFailed(t *testing.T) {
 	require.Equal(t, []string{"start:pending", "in_progress", "failed"}, h.editor.statuses("call-1"))
 	require.Contains(t, h.editor.lastUpdate("call-1").Content[0].Content.Content.Text.Text, "订单号格式不对")
 }
+
+// 执行中被取消的调用以"已取消"结束，而不是把 context 错误原文显示给用户。
+func TestCancelledToolCallShowsCancelled(t *testing.T) {
+	started := make(chan struct{})
+	slow := tools.NewBaseTool("lookup", "测试工具 lookup", `{"type":"object","properties":{"q":{"type":"string"}}}`,
+		func(ctx context.Context, _ *interfaces.ToolInput) (*interfaces.ToolOutput, error) {
+			close(started)
+			<-ctx.Done()
+			return nil, ctx.Err()
+		})
+	h := start(t, NewServer(toolFactory(newModel(calls("lookup")), nil, nil, only(slow))), newEditor())
+	h.initialize(t, acpsdk.ClientCapabilities{})
+	id := h.newSession(t, t.TempDir())
+
+	done := promptAsync(t, h, id, "查")
+	recv(t, started, "工具开始执行")
+	require.NoError(t, h.client.Cancel(context.Background(), acpsdk.CancelNotification{SessionId: id}))
+	res := recv(t, done, "prompt 返回")
+	require.NoError(t, res.err)
+	require.Equal(t, acpsdk.StopReasonCancelled, res.resp.StopReason)
+	require.Equal(t, []string{"start:pending", "in_progress", "failed"}, h.editor.statuses("call-1"))
+	require.Equal(t, "已取消", h.editor.lastUpdate("call-1").Content[0].Content.Content.Text.Text)
+}

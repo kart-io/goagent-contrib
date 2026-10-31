@@ -8,6 +8,7 @@ import (
 	"time"
 
 	acpsdk "github.com/coder/acp-go-sdk"
+	"github.com/kart-io/goagent/builder"
 	"github.com/kart-io/goagent/core/session"
 	"github.com/stretchr/testify/require"
 )
@@ -183,4 +184,33 @@ func TestServeReturnsNilOnDisconnectAndClosesRunners(t *testing.T) {
 	require.NoError(t, recv(t, done, "Serve 返回"))
 	require.EqualValues(t, 2, closed.Load())
 	_ = agentOut.Close()
+}
+
+// doneAfterCancel 在本轮被取消后才发出 done，确定性地模拟取消与正常结束同时发生。
+type doneAfterCancel struct{ started chan struct{} }
+
+func (r doneAfterCancel) ExecuteStream(ctx context.Context, _ any) (<-chan builder.AgentEvent, error) {
+	ch := make(chan builder.AgentEvent, 1)
+	go func() {
+		defer close(ch)
+		close(r.started)
+		<-ctx.Done()
+		ch <- builder.AgentEvent{Type: "done"}
+	}()
+	return ch, nil
+}
+
+// 收到 session/cancel 后即使 Runner 随即正常结束，也以 cancelled 返回（ACP 要求）。
+func TestCancelRacingDoneReturnsCancelled(t *testing.T) {
+	r := doneAfterCancel{started: make(chan struct{})}
+	h := start(t, NewServer(func(context.Context, *Session) (Runner, error) { return r, nil }), newEditor())
+	h.initialize(t, acpsdk.ClientCapabilities{})
+	id := h.newSession(t, t.TempDir())
+
+	done := promptAsync(t, h, id, "问题")
+	recv(t, r.started, "Runner 开始执行")
+	require.NoError(t, h.client.Cancel(context.Background(), acpsdk.CancelNotification{SessionId: id}))
+	res := recv(t, done, "prompt 返回")
+	require.NoError(t, res.err)
+	require.Equal(t, acpsdk.StopReasonCancelled, res.resp.StopReason)
 }

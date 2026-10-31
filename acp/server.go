@@ -209,8 +209,3 @@ func (c *conn) LoadSession(context.Context, acpsdk.LoadSessionRequest) (acpsdk.L
 func (c *conn) ListSessions(context.Context, acpsdk.ListSessionsRequest) (acpsdk.ListSessionsResponse, error) {
 	return acpsdk.ListSessionsResponse{}, acpsdk.NewMethodNotFound(acpsdk.AgentMethodSessionList)
 }
-
-// Prompt 在 Task 2 实现，此处先满足接口。
-func (c *conn) Prompt(context.Context, acpsdk.PromptRequest) (acpsdk.PromptResponse, error) {
-	return acpsdk.PromptResponse{}, acpsdk.NewMethodNotFound(acpsdk.AgentMethodSessionPrompt)
-}

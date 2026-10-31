@@ -38,17 +38,17 @@ func (e *clientExecutor) Run(ctx context.Context, cmd env.Command) (env.Result, 
 		return env.Result{}, fmt.Errorf("acp: 创建终端：%w", err)
 	}
 	term := created.TerminalId
-	// 结束阶段的请求不能随调用方 ctx 取消，否则终端得不到 kill 与 release。
-	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), endTurnTimeout)
-	defer cancel()
 	defer func() {
+		cleanup, cancel := cleanupCtx(ctx)
+		defer cancel()
 		_, _ = peer.ReleaseTerminal(cleanup, acpsdk.ReleaseTerminalRequest{SessionId: sid, TerminalId: term})
 	}()
 
 	if callID := callIDFrom(ctx); callID != "" {
-		terms := e.s.calls.addTerminal(callID, term)
-		if err := e.s.update(ctx, acpsdk.UpdateToolCall(acpsdk.ToolCallId(callID), acpsdk.WithUpdateContent(toolContent(terms, "")))); err != nil {
-			return env.Result{}, err
+		if terms := e.s.calls.addTerminal(callID, term); terms != nil {
+			if err := e.s.update(ctx, acpsdk.UpdateToolCall(acpsdk.ToolCallId(callID), acpsdk.WithUpdateContent(toolContent(terms, "")))); err != nil {
+				return env.Result{}, err
+			}
 		}
 	}
 
@@ -57,6 +57,8 @@ func (e *clientExecutor) Run(ctx context.Context, cmd env.Command) (env.Result, 
 		if ctx.Err() == nil {
 			return env.Result{}, fmt.Errorf("acp: 等待终端退出：%w", err)
 		}
+		cleanup, cancel := cleanupCtx(ctx)
+		defer cancel()
 		_, _ = peer.KillTerminal(cleanup, acpsdk.KillTerminalRequest{SessionId: sid, TerminalId: term})
 		out, _ := peer.TerminalOutput(cleanup, acpsdk.TerminalOutputRequest{SessionId: sid, TerminalId: term})
 		return env.Result{Output: []byte(out.Output)}, ctx.Err()
@@ -73,4 +75,9 @@ func (e *clientExecutor) Run(ctx context.Context, cmd env.Command) (env.Result, 
 		code = -1 // 被信号终止，没有退出码
 	}
 	return env.Result{Output: []byte(out.Output), ExitCode: code}, nil
+}
+
+// cleanupCtx 给结束阶段的请求一个不随调用方取消、自此刻起计时的 ctx，否则长时间运行后终端得不到 kill 与 release。
+func cleanupCtx(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), endTurnTimeout)
 }

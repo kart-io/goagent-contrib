@@ -78,7 +78,7 @@ func TestTerminalEmbeddedInToolCall(t *testing.T) {
 	var embedded bool
 	for _, n := range ed.notifications() {
 		if u := n.Update.ToolCallUpdate; u != nil && u.Status == nil && len(u.Content) == 1 && u.Content[0].Terminal != nil {
-			embedded = u.Content[0].Terminal.TerminalId == "term-1"
+			embedded = embedded || u.Content[0].Terminal.TerminalId == "term-1"
 		}
 	}
 	require.True(t, embedded, "执行中发送带终端的 tool_call_update")
@@ -86,4 +86,47 @@ func TestTerminalEmbeddedInToolCall(t *testing.T) {
 	require.Equal(t, acpsdk.ToolCallStatusCompleted, *last.Status)
 	require.Equal(t, "term-1", last.Content[0].Terminal.TerminalId)
 	require.Equal(t, "PASS", last.Content[1].Content.Content.Text.Text)
+}
+
+func TestClientExecutorSignalExitCode(t *testing.T) {
+	s, ed, _ := fsSession(t, termCaps)
+	ed.signal = true
+	res, err := s.Executor().Run(context.Background(), env.Command{Argv: []string{"x"}})
+	require.NoError(t, err)
+	require.Equal(t, -1, res.ExitCode)
+}
+
+func TestClientExecutorDefaultDirIsCwd(t *testing.T) {
+	s, ed, dir := fsSession(t, termCaps)
+	for _, d := range []string{"", "."} {
+		_, err := s.Executor().Run(context.Background(), env.Command{Argv: []string{"x"}, Dir: d})
+		require.NoError(t, err)
+	}
+	require.Len(t, ed.created, 2)
+	for _, c := range ed.created {
+		require.Equal(t, dir, *c.Cwd)
+	}
+}
+
+// 命令运行超过清理超时后被取消，kill 与 release 仍然发出。
+func TestClientExecutorCleanupOutlivesTimeout(t *testing.T) {
+	old := endTurnTimeout
+	endTurnTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { endTurnTimeout = old })
+	s, ed, _ := fsSession(t, termCaps)
+	ed.hang = true
+	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Millisecond)
+	defer cancel()
+	_, err := s.Executor().Run(ctx, env.Command{Argv: []string{"sleep", "60"}})
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.Equal(t, []string{"create", "wait", "kill", "output", "release"}, ed.termCalls)
+}
+
+func TestAddTerminalIgnoresFinishedCall(t *testing.T) {
+	c := newCallTracker()
+	require.True(t, c.start("a"))
+	require.Equal(t, []string{"t1"}, c.addTerminal("a", "t1"))
+	c.finish("a")
+	require.Nil(t, c.addTerminal("a", "t2"))
+	require.Empty(t, c.drain())
 }

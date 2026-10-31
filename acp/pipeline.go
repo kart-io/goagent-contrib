@@ -18,8 +18,8 @@ const (
 	optionReject       = "reject_once"
 )
 
-// endTurnTimeout 限制一轮结束时补发通知的等待；此时 prompt 的 ctx 可能已取消。
-const endTurnTimeout = 5 * time.Second
+// endTurnTimeout 限制一轮结束时补发通知与清理终端的等待；此时 prompt 的 ctx 可能已取消。测试会缩短它。
+var endTurnTimeout = 5 * time.Second
 
 // Pipeline 返回已装好工具调用通知与审批的管线，交给宿主的 tools.Dispatcher。宿主追加返回 PreAsk 的
 // PreHook 来要求审批，也可追加 Guards、Around、Post，但不应替换第 0 项与 Approver。
@@ -201,6 +201,9 @@ func (t *callTracker) start(id string) bool {
 func (t *callTracker) addTerminal(id, term string) []string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if _, ok := t.open[id]; !ok {
+		return nil
+	}
 	t.open[id] = append(t.open[id], term)
 	return append([]string(nil), t.open[id]...)
 }

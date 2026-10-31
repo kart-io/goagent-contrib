@@ -8,6 +8,7 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/kart-io/goagent/builder"
@@ -32,6 +33,8 @@ type fakeEditor struct {
 	// terminal 决定终端命令的输出与退出码；hang 为真时 wait_for_exit 阻塞到请求取消。
 	terminal  func(acpsdk.CreateTerminalRequest) (output string, exit int)
 	hang      bool
+	signal    bool          // 为真时 wait_for_exit 只返回信号而无退出码
+	delay     time.Duration // wait_for_exit 先等待的时长
 	created   []acpsdk.CreateTerminalRequest
 	termCalls []string
 }
@@ -104,10 +107,21 @@ func (e *fakeEditor) WaitForTerminalExit(ctx context.Context, _ acpsdk.WaitForTe
 	e.record("wait")
 	e.mu.Lock()
 	hang := e.hang
+	signal, delay := e.signal, e.delay
 	e.mu.Unlock()
 	if hang {
 		<-ctx.Done()
 		return acpsdk.WaitForTerminalExitResponse{}, ctx.Err()
+	}
+	if delay > 0 {
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return acpsdk.WaitForTerminalExitResponse{}, ctx.Err()
+		}
+	}
+	if signal {
+		return acpsdk.WaitForTerminalExitResponse{Signal: acpsdk.Ptr("SIGKILL")}, nil
 	}
 	_, code := e.result()
 	return acpsdk.WaitForTerminalExitResponse{ExitCode: acpsdk.Ptr(code)}, nil

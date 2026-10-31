@@ -45,7 +45,11 @@ func newSession(c *conn, id, cwd string, mcp []acpsdk.McpServer) (*Session, erro
 	} else {
 		s.fs = local
 	}
-	s.exec = env.LocalExecutor{Root: cwd}
+	if c.capabilities().Terminal {
+		s.exec = &clientExecutor{s: s}
+	} else {
+		s.exec = env.LocalExecutor{Root: cwd}
+	}
 	s.calls = newCallTracker()
 	s.pipeline = s.newPipeline()
 	return s, nil

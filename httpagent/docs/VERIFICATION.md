@@ -38,4 +38,4 @@ go vet ./...
 - GoAgent主仓21份入口文档通过链接检查，4个完整Go程序编译通过；旧LLM示例漏import及“离线模拟”错误描述已修正。
 - 从使用指南提取完整服务程序，使用已运行的本地Ollama llama3.1:8b实际执行JSON、SSE和inline Webhook；SSE含echo_input tool_start及唯一done，原生Hook实际触发，SIGTERM后exit0。
 
-源码核对、命令输出及实测结果见 [文档验收记录](https://github.com/kart-io/goagent/blob/feat/httpagent-webhooks-20261031/docs/evaluation/2026-10-31-httpagent-documentation/REPORT.md)。未下载模型，普通文档校验脚本仍不调用模型。上述结果不表示已验证所有框架或生产队列。
+源码核对、命令输出及实测结果见 [文档验收记录](https://github.com/kart-io/goagent/blob/master/docs/evaluation/2026-10-31-httpagent-documentation/REPORT.md)。未下载模型，普通文档校验脚本仍不调用模型。上述结果不表示已验证所有框架或生产队列。

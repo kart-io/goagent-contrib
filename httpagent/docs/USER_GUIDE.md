@@ -14,12 +14,12 @@
 | 框架自行完成WebSocket握手 | Handler.ServeWebSocket | 实现WebSocketConn |
 | 给运行结果发送外部通知 | Config.Delivery | Sender目标，或宿主outbox |
 
-模块本身不提供Web页面。页面与客户端在 [goagent-examples 的HTTP案例](https://github.com/kart-io/goagent-examples/tree/feat/httpagent-webhooks-20261031/orchestration/httpagent)。入口适配不改变GoAgent的定位，业务Agent、工具、workflow、存储和模型由宿主装配。
+模块本身不提供Web页面。页面与客户端在 [goagent-examples 的HTTP案例](https://github.com/kart-io/goagent-examples/tree/main/orchestration/httpagent)。入口适配不改变GoAgent的定位，业务Agent、工具、workflow、存储和模型由宿主装配。
 
 ## 2. 先运行离线案例
 
 ```sh
-git clone -b feat/httpagent-webhooks-20261031 https://github.com/kart-io/goagent-examples.git
+git clone -b main https://github.com/kart-io/goagent-examples.git
 cd goagent-examples/orchestration/httpagent
 GOWORK=off go run .
 ```
@@ -30,7 +30,7 @@ GOWORK=off go run .
 GOWORK=off go run ./cmd/client -case all -input '查询订单 E100'
 ```
 
-预期4条completed和1条cancelled。默认仅模型回答由离线脚本控制，Builder、Plugin、Dispatcher、工具与网络都实际执行。完整的三终端双向Webhook、SSE、WS及宿主升级步骤见案例的 [SCENARIOS.md](https://github.com/kart-io/goagent-examples/blob/feat/httpagent-webhooks-20261031/orchestration/httpagent/SCENARIOS.md)。无需本地contrib工作树；修改扩展并联调时才需要workspace。
+预期4条completed和1条cancelled。默认仅模型回答由离线脚本控制，Builder、Plugin、Dispatcher、工具与网络都实际执行。完整的三终端双向Webhook、SSE、WS及宿主升级步骤见案例的 [SCENARIOS.md](https://github.com/kart-io/goagent-examples/blob/main/orchestration/httpagent/SCENARIOS.md)。无需本地contrib工作树；修改扩展并联调时才需要workspace。
 
 ## 3. 在自己的服务中装配
 
@@ -258,7 +258,7 @@ worker从宿主持久存储读取输入及RunID，用独立生命周期context�
 
 框架自行升级时，实现 `WebSocketConn`，然后阻塞调用 `h.ServeWebSocket(ctx, conn)`。宿主负责升级前的认证、Origin、子协议与尚未交付的连接；交付后Handler负责关闭、容量、取消和停服。不可让框架和Handler同时读写同一连接。已有连接被容量/停服拒绝时返回错误并关闭，不再返回握手前的HTTP状态。
 
-接口方法及适配要求见 [WebSocket API](API_REFERENCE.md)；可运行包装见案例的 [internal/hostws](https://github.com/kart-io/goagent-examples/tree/feat/httpagent-webhooks-20261031/orchestration/httpagent/internal/hostws)。`GOAGENT_WS_HOST=1`可运行宿主升级模式。该例以Gorilla演示宿主包装，没有声称已适配全部框架。
+接口方法及适配要求见 [WebSocket API](API_REFERENCE.md)；可运行包装见案例的 [internal/hostws](https://github.com/kart-io/goagent-examples/tree/main/orchestration/httpagent/internal/hostws)。`GOAGENT_WS_HOST=1`可运行宿主升级模式。该例以Gorilla演示宿主包装，没有声称已适配全部框架。
 
 ## 8. 取消、配置与停服
 

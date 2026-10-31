@@ -8,6 +8,7 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/kart-io/goagent/builder"
@@ -169,7 +170,11 @@ func start(t *testing.T, srv *Server, ed *fakeEditor) *harness {
 		_ = editorOut.Close()
 		_ = agentOut.Close()
 		cancel()
-		<-done
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("断开后 Serve 未在 5 秒内返回")
+		}
 	})
 	return h
 }

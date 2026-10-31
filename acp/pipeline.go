@@ -18,7 +18,8 @@ const (
 	optionReject       = "reject_once"
 )
 
-// endTurnTimeout 限制一轮结束时补发通知与清理终端的等待；此时 prompt 的 ctx 可能已取消。测试会缩短它。
+// endTurnTimeout 限制一轮结束时补发通知、清理终端与关闭会话的等待；此时 prompt 的 ctx 可能已取消。
+// 测试会缩短它，所以本包测试不能使用 t.Parallel。
 var endTurnTimeout = 5 * time.Second
 
 // Pipeline 返回已装好工具调用通知与审批的管线，交给宿主的 tools.Dispatcher。宿主追加返回 PreAsk 的

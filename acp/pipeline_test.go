@@ -218,3 +218,56 @@ func TestParallelCalls(t *testing.T) {
 		require.Equal(t, []string{"start:pending", "in_progress", "completed"}, h.editor.statuses(id), id)
 	}
 }
+
+// argFactory 以 ReturnArgumentErrors 注册工具，参数错误交还模型而不中止本轮。
+func argFactory(model *scriptModel, tool interfaces.Tool) Factory {
+	return func(_ context.Context, s *Session) (Runner, error) {
+		reg := tools.NewRegistry()
+		if err := reg.Register(tool); err != nil {
+			return nil, err
+		}
+		d, err := tools.NewDispatcher(reg, tools.DispatchConfig{Pipeline: s.Pipeline(), ReturnArgumentErrors: true})
+		if err != nil {
+			return nil, err
+		}
+		agent, err := builder.NewSimpleBuilder(model).WithSessionID(s.ID()).WithTools(d.Tools()...).WithMaxIterations(4).Build()
+		if err != nil {
+			return nil, err
+		}
+		return agent, nil
+	}
+}
+
+// 不满足 Schema 的参数在管线之前被拒绝并交还模型：编辑器不会看到这次调用。
+func TestSchemaInvalidArgsNeverAnnounced(t *testing.T) {
+	bad := calls("lookup")
+	bad.calls[0].Function.Arguments = `{"q":1}`
+	model := newModel(bad, say("改正了"))
+	strict := tools.NewBaseTool("lookup", "查询", `{"type":"object","properties":{"q":{"type":"string"}},"required":["q"]}`, func(context.Context, *interfaces.ToolInput) (*interfaces.ToolOutput, error) {
+		return &interfaces.ToolOutput{Success: true, Result: "不应执行"}, nil
+	})
+	h := start(t, NewServer(argFactory(model, strict)), newEditor())
+	h.initialize(t, acpsdk.ClientCapabilities{})
+	resp, err := h.prompt(t, h.newSession(t, t.TempDir()), "查")
+	require.NoError(t, err)
+	require.Equal(t, acpsdk.StopReasonEndTurn, resp.StopReason)
+	for _, n := range h.editor.notifications() {
+		require.Nil(t, n.Update.ToolCall, "参数不合法的调用不经过管线")
+	}
+	require.Equal(t, 2, model.count(), "参数错误交还模型")
+}
+
+// 工具执行时返回的 *tools.ArgumentError 经 ArgumentErrorResult 识别，调用标为 failed 而本轮继续。
+func TestToolArgumentErrorReportsFailed(t *testing.T) {
+	model := newModel(calls("lookup"), say("改正了"))
+	picky := tools.NewBaseTool("lookup", "查询", `{"type":"object","properties":{"q":{"type":"string"}}}`, func(context.Context, *interfaces.ToolInput) (*interfaces.ToolOutput, error) {
+		return nil, &tools.ArgumentError{Message: "订单号格式不对"}
+	})
+	h := start(t, NewServer(argFactory(model, picky)), newEditor())
+	h.initialize(t, acpsdk.ClientCapabilities{})
+	resp, err := h.prompt(t, h.newSession(t, t.TempDir()), "查")
+	require.NoError(t, err)
+	require.Equal(t, acpsdk.StopReasonEndTurn, resp.StopReason)
+	require.Equal(t, []string{"start:pending", "in_progress", "failed"}, h.editor.statuses("call-1"))
+	require.Contains(t, h.editor.lastUpdate("call-1").Content[0].Content.Content.Text.Text, "订单号格式不对")
+}

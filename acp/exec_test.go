@@ -109,6 +109,7 @@ func TestClientExecutorDefaultDirIsCwd(t *testing.T) {
 }
 
 // 命令运行超过清理超时后被取消，kill 与 release 仍然发出。
+// 本测试修改包级变量 endTurnTimeout，因此本包测试都不能使用 t.Parallel。
 func TestClientExecutorCleanupOutlivesTimeout(t *testing.T) {
 	old := endTurnTimeout
 	endTurnTimeout = 50 * time.Millisecond

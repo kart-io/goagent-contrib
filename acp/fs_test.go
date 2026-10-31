@@ -73,8 +73,10 @@ func TestClientFSWritesThroughEditor(t *testing.T) {
 	require.ErrorIs(t, err, env.ErrStale, "文件不存在时条件写入冲突")
 
 	require.NoError(t, os.Mkdir(filepath.Join(dir, "d"), 0o755))
+	writes := len(ed.writes)
 	_, err = s.FileSystem().WriteFile(ctx, "d", []byte("x"), env.WriteIntent{})
 	require.ErrorContains(t, err, "是目录")
+	require.Len(t, ed.writes, writes, "目标是目录时不转发写入")
 	_, _, err = s.FileSystem().ReadFile(ctx, "d")
 	require.ErrorContains(t, err, "是目录")
 	require.NotContains(t, ed.reads, filepath.Join(dir, "d"))

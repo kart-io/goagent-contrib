@@ -7,6 +7,7 @@ import (
 
 	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/kart-io/goagent/core/session"
+	"github.com/kart-io/goagent/llm"
 	"github.com/stretchr/testify/require"
 )
 
@@ -172,4 +173,30 @@ func TestLoadSessionSkipsRewound(t *testing.T) {
 	_, err = h2.client.LoadSession(context.Background(), acpsdk.LoadSessionRequest{SessionId: id, Cwd: dir, McpServers: []acpsdk.McpServer{}})
 	require.NoError(t, err)
 	require.Equal(t, []string{"user:问一", "agent:第一轮"}, replayKinds(ed))
+}
+
+// 未结束的轮次（如进程在本轮中途退出）在下一轮开始时被标为中止，回放不包含其中的消息。
+func TestLoadSessionSkipsAbortedTurn(t *testing.T) {
+	store := session.NewMemoryStore()
+	dir := t.TempDir()
+	tool := only(echoTool("lookup", nil, ""))
+	h := start(t, NewServer(toolFactory(newModel(say("第二轮")), nil, store, tool), WithSessionStore(store)), newEditor())
+	h.initialize(t, acpsdk.ClientCapabilities{})
+	id := h.newSession(t, dir)
+
+	begin, err := session.NewEvent(session.TypeTurnStart, session.TurnStart{Input: "问一"})
+	require.NoError(t, err)
+	user, err := session.NewEvent(session.TypeUserMessage, session.MessageData{Message: llm.Message{Role: "user", Content: "问一"}})
+	require.NoError(t, err)
+	_, err = store.Append(context.Background(), string(id), 0, begin, user)
+	require.NoError(t, err)
+	_, err = h.prompt(t, id, "问二")
+	require.NoError(t, err)
+
+	ed := newEditor()
+	h2 := start(t, NewServer(toolFactory(newModel(say("x")), nil, store, tool), WithSessionStore(store)), ed)
+	h2.initialize(t, acpsdk.ClientCapabilities{})
+	_, err = h2.client.LoadSession(context.Background(), acpsdk.LoadSessionRequest{SessionId: id, Cwd: dir, McpServers: []acpsdk.McpServer{}})
+	require.NoError(t, err)
+	require.Equal(t, []string{"user:问二", "agent:第二轮"}, replayKinds(ed))
 }

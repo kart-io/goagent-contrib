@@ -18,19 +18,42 @@ func (c *conn) LoadSession(ctx context.Context, p acpsdk.LoadSessionRequest) (ac
 	id := string(p.SessionId)
 	// 在锁内预留 ID，使并发的同 ID 加载只有一个通过检查；任何返回路径都释放预留。
 	c.mu.Lock()
-	opened := c.sessions[id] != nil || c.loading[id]
+	old := c.sessions[id]
+	opened := c.loading[id] || c.closed
+	if old != nil {
+		old.turnMu.Lock()
+		opened = opened || old.closed
+		old.turnMu.Unlock()
+	}
+	for pending := range c.pending {
+		if pending.id == id {
+			opened = true
+			break
+		}
+	}
 	if !opened {
 		c.loading[id] = true
 	}
 	c.mu.Unlock()
 	if opened {
-		return acpsdk.LoadSessionResponse{}, acpsdk.NewInvalidParams(map[string]any{"error": fmt.Sprintf("acp: 会话 %q 已打开，须先 session/close", id)})
+		return acpsdk.LoadSessionResponse{}, acpsdk.NewInvalidParams(map[string]any{"error": fmt.Sprintf("acp: 会话 %q 正在加载或清理，暂不能重载", id)})
 	}
 	defer func() {
 		c.mu.Lock()
 		delete(c.loading, id)
 		c.mu.Unlock()
 	}()
+	// 客户端可直接重载现有会话，但新旧资源必须先后交接。
+	if old != nil {
+		if err := old.close(); err != nil {
+			return acpsdk.LoadSessionResponse{}, internalError("关闭待重载会话", err)
+		}
+		c.mu.Lock()
+		if c.sessions[id] == old {
+			delete(c.sessions, id)
+		}
+		c.mu.Unlock()
+	}
 	events, err := c.srv.store.Read(ctx, id, 0)
 	if errors.Is(err, session.ErrNotFound) {
 		return acpsdk.LoadSessionResponse{}, missing(p.SessionId)
@@ -44,8 +67,12 @@ func (c *conn) LoadSession(ctx context.Context, p acpsdk.LoadSessionRequest) (ac
 	}
 	// 回放完成后才登记，失败时无需从会话表回滚。
 	if err := s.replay(ctx, events); err != nil {
-		s.closeRunner()
-		return acpsdk.LoadSessionResponse{}, internalError("回放会话", err)
+		cleanupErr := c.discard(s)
+		return acpsdk.LoadSessionResponse{}, internalError("回放会话", errors.Join(err, cleanupErr))
+	}
+	if err := s.persistMetadata(ctx); err != nil {
+		cleanupErr := c.discard(s)
+		return acpsdk.LoadSessionResponse{}, internalError("保存会话元数据", errors.Join(err, cleanupErr))
 	}
 	if err := c.register(s); err != nil {
 		return acpsdk.LoadSessionResponse{}, err
@@ -100,26 +127,4 @@ func (s *Session) replay(ctx context.Context, events []session.Event) error {
 		}
 	}
 	return nil
-}
-
-// ListSessions 列出会话日志中的会话；工作区只对本连接新建或加载过的会话已知，未知时为空且不参与 cwd 过滤。
-func (c *conn) ListSessions(ctx context.Context, p acpsdk.ListSessionsRequest) (acpsdk.ListSessionsResponse, error) {
-	if c.srv.store == nil {
-		return acpsdk.ListSessionsResponse{}, acpsdk.NewMethodNotFound(acpsdk.AgentMethodSessionList)
-	}
-	ids, err := c.srv.store.List(ctx)
-	if err != nil {
-		return acpsdk.ListSessionsResponse{}, internalError("列出会话", err)
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	out := acpsdk.ListSessionsResponse{Sessions: []acpsdk.SessionInfo{}}
-	for _, id := range ids {
-		cwd, known := c.cwds[id]
-		if p.Cwd != nil && known && cwd != *p.Cwd {
-			continue
-		}
-		out.Sessions = append(out.Sessions, acpsdk.SessionInfo{SessionId: acpsdk.SessionId(id), Cwd: cwd})
-	}
-	return out, nil
 }

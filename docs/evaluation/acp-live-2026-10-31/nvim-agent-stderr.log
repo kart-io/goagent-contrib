@@ -1,0 +1,17 @@
+{"elapsed_ms":740,"event":"real_model_request","model":"llama3.1:8b","n":1,"status":200}
+{"elapsed_ms":205,"event":"real_model_request","model":"llama3.1:8b","n":2,"status":200}
+{"elapsed_ms":1050,"event":"real_model_request","model":"llama3.1:8b","n":3,"status":200}
+{"elapsed_ms":49,"event":"real_model_request","model":"llama3.1:8b","n":4,"status":200}
+{"elapsed_ms":1316,"event":"real_model_request","model":"llama3.1:8b","n":5,"status":200}
+{"elapsed_ms":44,"event":"real_model_request","model":"llama3.1:8b","n":6,"status":200}
+{"elapsed_ms":1170,"event":"real_model_request","model":"llama3.1:8b","n":7,"status":200}
+{"elapsed_ms":861,"event":"real_model_request","model":"llama3.1:8b","n":8,"status":200}
+{"elapsed_ms":1784,"event":"real_model_request","model":"llama3.1:8b","n":9,"status":200}
+{"elapsed_ms":1691,"event":"real_model_request","model":"llama3.1:8b","n":10,"status":200}
+{"elapsed_ms":1621,"event":"real_model_request","model":"llama3.1:8b","n":11,"status":200}
+{"event":"session_closed","session_id":"sess_ab9373e5-c25d-46bc-ac10-baec7b26d907"}
+{"event":"session_closed","session_id":"sess_ab9373e5-c25d-46bc-ac10-baec7b26d907"}
+{"event":"session_closed","session_id":"sess_bc767045-6d5a-4cdb-a3af-efb33214c150"}
+{"elapsed_ms":1618,"event":"real_model_request","model":"llama3.1:8b","n":1,"status":200}
+{"elapsed_ms":1809,"event":"real_model_request","model":"llama3.1:8b","n":2,"status":200}
+{"event":"session_closed","session_id":"sess_ab9373e5-c25d-46bc-ac10-baec7b26d907"}

@@ -1,0 +1,44 @@
+{
+  "codecompanion_commit": "142eadffdaa8dd06060646b6f8ef74e99c42ab06",
+  "plenary_commit": "74b06c6c75e4eeb3108ec01852001636d85a932b",
+  "tck_commit": "b7f40fb3c003c45926547be5a1f7e2b374035815",
+  "binary_sha256": "6cdbd41b1606d9ffd02e033a35ef54d41222e3e94c040e863ac8607b90b9ffad",
+  "model": {
+    "name": "llama3.1:8b",
+    "model": "llama3.1:8b",
+    "modified_at": "2025-12-30T21:31:43.897576772+08:00",
+    "size": 4920753328,
+    "digest": "46e0c10c039e019119339687c3c1757cc81b9da49709a3b3924863ba87ca666e",
+    "details": {
+      "parent_model": "",
+      "format": "gguf",
+      "family": "llama",
+      "families": [
+        "llama"
+      ],
+      "parameter_size": "8.0B",
+      "quantization_level": "Q4_K_M",
+      "context_length": 131072,
+      "embedding_length": 4096,
+      "runner": "ggml"
+    },
+    "capabilities": [
+      "completion",
+      "tools"
+    ]
+  },
+  "nvim_version": "NVIM v0.12.6",
+  "effective_temperature": 0.01,
+  "max_tokens": 512,
+  "acp_sources": {
+    "doc.go": "02af88e71b7eb2d6ea230bfc6ea93e001dcd27a45fae198e70a23b152e3f1c90",
+    "exec.go": "cbf0f5d8368213e35c8b5d605cdd9917ab9a93c43d75be5cc068b388ff1e26a9",
+    "fs.go": "47170c292a4336ec7278fc933cbb551be2317ab9976366cbab807a216e6368ea",
+    "metadata.go": "5f8fe9536fa85bf05b4c96c2b76e6538d8aa2098c52691aadb4b1a6e88bb336e",
+    "pipeline.go": "3cc60bf9a965837b32459950be9cf939aa57883c7f91213526fc561aaeae3dd8",
+    "prompt.go": "ce5336ed25627cf6fe878c75baa76581e030f5950c2a729ad9bb33a4d3df0471",
+    "replay.go": "10f9ea4492e070ea5cd9dbd77c10d23f2c29ea4c910b68a4c53a680d8edbab0e",
+    "server.go": "7bb1a99b7da6c1d8a90e09f23a1db9c70dd10a894afc27087d112c5a064babde",
+    "session.go": "711f3608dcb6c86f5f52d4c48158aeda98f998cde6734bccd12dccf86b980ac3"
+  }
+}

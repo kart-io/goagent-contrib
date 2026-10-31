@@ -4,23 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
-
 	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/kart-io/goagent/harness/env"
+	"path/filepath"
 )
 
-// clientExecutor 在编辑器终端中执行命令，编辑器可展示输出；工具调用内执行时终端嵌入该调用。
 type clientExecutor struct{ s *Session }
 
 var _ env.Executor = (*clientExecutor)(nil)
 
-// Capabilities 实现 env.Executor：编辑器终端在宿主机上执行，可以访问网络。
-func (e *clientExecutor) Capabilities() env.Capabilities { return env.Capabilities{Network: true} }
+func (e *clientExecutor) Capabilities() env.Capabilities { return *e.s.conn.srv.terminalCaps }
 
-func (e *clientExecutor) Run(ctx context.Context, cmd env.Command) (env.Result, error) {
+func (e *clientExecutor) Run(ctx context.Context, cmd env.Command) (result env.Result, err error) {
 	if len(cmd.Argv) == 0 {
-		return env.Result{}, errors.New("acp: 命令为空")
+		return result, errors.New("acp: 命令为空")
 	}
 	dirArg := cmd.Dir
 	if dirArg == "" {
@@ -28,56 +25,94 @@ func (e *clientExecutor) Run(ctx context.Context, cmd env.Command) (env.Result, 
 	}
 	rel, err := e.s.local.Resolve(dirArg)
 	if err != nil {
-		return env.Result{}, err
+		return result, err
 	}
 	dir := filepath.Join(e.s.cwd, filepath.FromSlash(rel))
 	peer := e.s.conn.client()
 	sid := acpsdk.SessionId(e.s.id)
 	created, err := peer.CreateTerminal(ctx, acpsdk.CreateTerminalRequest{SessionId: sid, Command: cmd.Argv[0], Args: cmd.Argv[1:], Cwd: &dir})
-	if err != nil {
-		return env.Result{}, fmt.Errorf("acp: 创建终端：%w", err)
+	if err != nil || created.TerminalId == "" {
+		err = errors.Join(ctx.Err(), err, errors.New("acp: 终端创建结果未知，无法确认远端是否已启动"))
+		e.s.recordFailure(err)
+		return result, err
 	}
 	term := created.TerminalId
+	uncertain := true
 	defer func() {
-		cleanup, cancel := cleanupCtx(ctx)
-		defer cancel()
-		_, _ = peer.ReleaseTerminal(cleanup, acpsdk.ReleaseTerminalRequest{SessionId: sid, TerminalId: term})
+		output, cleanupErr := e.cleanupTerminal(ctx, term, uncertain)
+		if len(result.Output) == 0 {
+			result.Output = output
+		}
+		err = errors.Join(ctx.Err(), err, cleanupErr)
+		e.s.recordFailure(cleanupErr)
 	}()
-
 	if callID := callIDFrom(ctx); callID != "" {
 		if terms := e.s.calls.addTerminal(callID, term); terms != nil {
 			if err := e.s.update(ctx, acpsdk.UpdateToolCall(acpsdk.ToolCallId(callID), acpsdk.WithUpdateContent(toolContent(terms, "")))); err != nil {
-				return env.Result{}, err
+				return result, err
 			}
 		}
 	}
-
 	exit, err := peer.WaitForTerminalExit(ctx, acpsdk.WaitForTerminalExitRequest{SessionId: sid, TerminalId: term})
 	if err != nil {
-		if ctx.Err() == nil {
-			return env.Result{}, fmt.Errorf("acp: 等待终端退出：%w", err)
-		}
-		cleanup, cancel := cleanupCtx(ctx)
-		defer cancel()
-		_, _ = peer.KillTerminal(cleanup, acpsdk.KillTerminalRequest{SessionId: sid, TerminalId: term})
-		out, _ := peer.TerminalOutput(cleanup, acpsdk.TerminalOutputRequest{SessionId: sid, TerminalId: term})
-		return env.Result{Output: []byte(out.Output)}, ctx.Err()
+		return result, fmt.Errorf("acp: 等待终端退出：%w", err)
 	}
-	out, err := peer.TerminalOutput(ctx, acpsdk.TerminalOutputRequest{SessionId: sid, TerminalId: term})
-	if err != nil {
-		return env.Result{}, fmt.Errorf("acp: 读取终端输出：%w", err)
-	}
-	code := 0
 	switch {
 	case exit.ExitCode != nil:
-		code = *exit.ExitCode
+		result.ExitCode = *exit.ExitCode
 	case exit.Signal != nil:
-		code = -1 // 被信号终止，没有退出码
+		result.ExitCode = -1
+	default:
+		return result, errors.New("acp: 终端缺少退出码和信号，执行状态未知")
 	}
-	return env.Result{Output: []byte(out.Output), ExitCode: code}, nil
+	uncertain = false
+	output, err := peer.TerminalOutput(ctx, acpsdk.TerminalOutputRequest{SessionId: sid, TerminalId: term})
+	result.Output = []byte(output.Output)
+	if err != nil {
+		return result, fmt.Errorf("acp: 读取终端输出：%w", err)
+	}
+	return result, nil
 }
 
-// cleanupCtx 给结束阶段的请求一个不随调用方取消、自此刻起计时的 ctx，否则长时间运行后终端得不到 kill 与 release。
+// 每个回收阶段在开始时单独计时，前一个阶段超时不能剥夺 release 的执行机会。
+func (e *clientExecutor) cleanupTerminal(parent context.Context, term string, uncertain bool) ([]byte, error) {
+	peer := e.s.conn.client()
+	sid := acpsdk.SessionId(e.s.id)
+	var errs []error
+	var output []byte
+	if uncertain {
+		ctx, cancel := cleanupCtx(parent)
+		_, err := peer.KillTerminal(ctx, acpsdk.KillTerminalRequest{SessionId: sid, TerminalId: term})
+		cancel()
+		if err != nil {
+			errs = append(errs, fmt.Errorf("acp: 中断终端：%w", err))
+		}
+		ctx, cancel = cleanupCtx(parent)
+		status, err := peer.WaitForTerminalExit(ctx, acpsdk.WaitForTerminalExitRequest{SessionId: sid, TerminalId: term})
+		cancel()
+		if err == nil && status.ExitCode == nil && status.Signal == nil {
+			err = errors.New("终端未确认退出")
+		}
+		if err != nil {
+			errs = append(errs, fmt.Errorf("acp: 确认终端退出：%w", err))
+		}
+		ctx, cancel = cleanupCtx(parent)
+		out, err := peer.TerminalOutput(ctx, acpsdk.TerminalOutputRequest{SessionId: sid, TerminalId: term})
+		cancel()
+		output = []byte(out.Output)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("acp: 读取中断后的输出：%w", err))
+		}
+	}
+	ctx, cancel := cleanupCtx(parent)
+	_, err := peer.ReleaseTerminal(ctx, acpsdk.ReleaseTerminalRequest{SessionId: sid, TerminalId: term})
+	cancel()
+	if err != nil {
+		errs = append(errs, fmt.Errorf("acp: 释放终端：%w", err))
+	}
+	return output, errors.Join(errs...)
+}
+
 func cleanupCtx(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(ctx), endTurnTimeout)
 }

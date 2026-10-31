@@ -26,16 +26,22 @@ type fakeEditor struct {
 	updates     []acpsdk.SessionNotification
 	permissions []acpsdk.RequestPermissionRequest
 	// answer 为空时选择 allow_once。
-	answer func(context.Context, acpsdk.RequestPermissionRequest) acpsdk.RequestPermissionResponse
-	files  map[string]string // 编辑器缓冲区：绝对路径 -> 内容
-	writes []acpsdk.WriteTextFileRequest
-	reads  []string
+	answer   func(context.Context, acpsdk.RequestPermissionRequest) acpsdk.RequestPermissionResponse
+	files    map[string]string // 编辑器缓冲区：绝对路径 -> 内容
+	writes   []acpsdk.WriteTextFileRequest
+	reads    []string
+	readHook func(context.Context)
 	// terminal 决定终端命令的输出与退出码；hang 为真时 wait_for_exit 阻塞到请求取消。
-	terminal  func(acpsdk.CreateTerminalRequest) (output string, exit int)
-	hang      bool
-	signal    bool // 为真时 wait_for_exit 只返回信号而无退出码
-	created   []acpsdk.CreateTerminalRequest
-	termCalls []string
+	terminal     func(acpsdk.CreateTerminalRequest) (output string, exit int)
+	hang         bool
+	missingExit  bool
+	killed       bool
+	releaseError error
+	waitHook     func(context.Context) (acpsdk.WaitForTerminalExitResponse, error)
+	releaseHook  func(context.Context)
+	signal       bool // 为真时 wait_for_exit 只返回信号而无退出码
+	created      []acpsdk.CreateTerminalRequest
+	termCalls    []string
 }
 
 func newEditor() *fakeEditor { return &fakeEditor{files: map[string]string{}} }
@@ -60,11 +66,15 @@ func (e *fakeEditor) RequestPermission(ctx context.Context, r acpsdk.RequestPerm
 	return answer(ctx, r), nil
 }
 
-func (e *fakeEditor) ReadTextFile(_ context.Context, r acpsdk.ReadTextFileRequest) (acpsdk.ReadTextFileResponse, error) {
+func (e *fakeEditor) ReadTextFile(ctx context.Context, r acpsdk.ReadTextFileRequest) (acpsdk.ReadTextFileResponse, error) {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	e.reads = append(e.reads, r.Path)
 	content, ok := e.files[r.Path]
+	hook := e.readHook
+	e.mu.Unlock()
+	if hook != nil {
+		hook(ctx)
+	}
 	if !ok {
 		return acpsdk.ReadTextFileResponse{}, acpsdk.NewInternalError(map[string]any{"error": "no buffer"})
 	}
@@ -107,7 +117,19 @@ func (e *fakeEditor) WaitForTerminalExit(ctx context.Context, _ acpsdk.WaitForTe
 	e.mu.Lock()
 	hang := e.hang
 	signal := e.signal
+	missing := e.missingExit
+	killed := e.killed
+	hook := e.waitHook
 	e.mu.Unlock()
+	if hook != nil && !killed {
+		return hook(ctx)
+	}
+	if missing {
+		return acpsdk.WaitForTerminalExitResponse{}, nil
+	}
+	if killed {
+		return acpsdk.WaitForTerminalExitResponse{ExitCode: acpsdk.Ptr(0)}, nil
+	}
 	if hang {
 		<-ctx.Done()
 		return acpsdk.WaitForTerminalExitResponse{}, ctx.Err()
@@ -127,12 +149,22 @@ func (e *fakeEditor) TerminalOutput(context.Context, acpsdk.TerminalOutputReques
 
 func (e *fakeEditor) KillTerminal(context.Context, acpsdk.KillTerminalRequest) (acpsdk.KillTerminalResponse, error) {
 	e.record("kill")
+	e.mu.Lock()
+	e.killed = true
+	e.mu.Unlock()
 	return acpsdk.KillTerminalResponse{}, nil
 }
 
-func (e *fakeEditor) ReleaseTerminal(context.Context, acpsdk.ReleaseTerminalRequest) (acpsdk.ReleaseTerminalResponse, error) {
+func (e *fakeEditor) ReleaseTerminal(ctx context.Context, _ acpsdk.ReleaseTerminalRequest) (acpsdk.ReleaseTerminalResponse, error) {
 	e.record("release")
-	return acpsdk.ReleaseTerminalResponse{}, nil
+	e.mu.Lock()
+	err := e.releaseError
+	hook := e.releaseHook
+	e.mu.Unlock()
+	if hook != nil {
+		hook(ctx)
+	}
+	return acpsdk.ReleaseTerminalResponse{}, err
 }
 
 func (e *fakeEditor) notifications() []acpsdk.SessionNotification {

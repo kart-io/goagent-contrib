@@ -2,12 +2,12 @@ package acp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/kart-io/goagent/harness/env"
@@ -24,9 +24,15 @@ type Session struct {
 	fs    env.FileSystem
 	exec  env.Executor
 
-	runner    Runner
-	run       sync.Mutex // 同一会话的 prompt 依次执行
-	closeOnce sync.Once
+	runner     Runner
+	run        chan struct{} // 获取执行权时支持 context 取消
+	closeOnce  sync.Once
+	closeDone  chan struct{}
+	closeErr   error
+	cleanups   []func(context.Context) error
+	failures   error
+	root       context.Context
+	rootCancel context.CancelFunc
 
 	// 当前 prompt 的取消由会话自己掌握：SDK 在重叠的 prompt 返回时会删掉新 prompt 的取消函数。
 	turnMu     sync.Mutex
@@ -50,7 +56,9 @@ func newSession(c *conn, id, cwd string, mcp []acpsdk.McpServer) (*Session, erro
 	if err != nil {
 		return nil, fmt.Errorf("acp: 打开工作区 %q：%w", cwd, err)
 	}
-	s := &Session{id: id, cwd: cwd, mcp: mcp, conn: c, local: local}
+	root, rootCancel := context.WithCancel(c.base)
+	s := &Session{id: id, cwd: filepath.Clean(cwd), mcp: append([]acpsdk.McpServer(nil), mcp...), conn: c, local: local,
+		run: make(chan struct{}, 1), closeDone: make(chan struct{}), root: root, rootCancel: rootCancel}
 	caps := c.capabilities().Fs
 	if caps.ReadTextFile && caps.WriteTextFile {
 		s.fs = &clientFS{s: s}
@@ -58,6 +66,10 @@ func newSession(c *conn, id, cwd string, mcp []acpsdk.McpServer) (*Session, erro
 		s.fs = local
 	}
 	if c.capabilities().Terminal {
+		if c.srv.terminalCaps == nil {
+			rootCancel()
+			return nil, errors.New("acp: 编辑器终端需要 WithTerminalCapabilities 显式声明执行环境")
+		}
 		s.exec = &clientExecutor{s: s}
 	} else {
 		s.exec = env.LocalExecutor{Root: cwd}
@@ -74,7 +86,7 @@ func (s *Session) ID() string { return s.id }
 func (s *Session) Cwd() string { return s.cwd }
 
 // MCPServers 原样返回编辑器要求连接的 MCP 服务器，宿主可用 mcp/remote 连接。
-func (s *Session) MCPServers() []acpsdk.McpServer { return s.mcp }
+func (s *Session) MCPServers() []acpsdk.McpServer { return append([]acpsdk.McpServer(nil), s.mcp...) }
 
 // FileSystem 返回工作区文件系统：客户端支持时读写经编辑器，其余操作在本地。
 func (s *Session) FileSystem() env.FileSystem { return s.fs }
@@ -156,33 +168,60 @@ func (s *Session) cancelTurn() {
 	}
 }
 
-// close 拒绝新的 prompt、取消当前 prompt，在其释放后关闭 Runner；最多等待 endTurnTimeout。
-func (s *Session) close() {
+// OnClose 注册宿主资源的释放动作；关闭开始后拒绝新增资源责任。
+func (s *Session) OnClose(cleanup func(context.Context) error) error {
 	s.turnMu.Lock()
-	s.closed = true
-	if s.turnCancel != nil {
-		s.turnCancel()
+	defer s.turnMu.Unlock()
+	if cleanup == nil || s.closed {
+		return errors.New("acp: 会话已关闭或清理回调为空")
 	}
-	s.turnMu.Unlock()
-	released := make(chan struct{})
-	go func() {
-		s.run.Lock()
-		s.closeRunner()
-		s.run.Unlock()
-		close(released)
-	}()
-	select {
-	case <-released:
-	case <-time.After(endTurnTimeout):
-		// 不响应取消的 Runner 不应让 session/close 一直挂起；它结束后上面的 goroutine 仍会关闭 Runner。
-	}
+	s.cleanups = append(s.cleanups, cleanup)
+	return nil
 }
 
-// closeRunner 在 Runner 实现 io.Closer 时关闭它，只关闭一次；此时已无人使用它，关闭错误无处上报，忽略。
-func (s *Session) closeRunner() {
+func (s *Session) recordFailure(err error) {
+	if err == nil {
+		return
+	}
+	s.turnMu.Lock()
+	s.failures = errors.Join(s.failures, err)
+	s.turnMu.Unlock()
+}
+
+// close 保留尚未停止的 Runner 的资源责任，超时可重试，实际释放只执行一次。
+func (s *Session) close() error {
 	s.closeOnce.Do(func() {
-		if c, ok := s.runner.(io.Closer); ok {
-			_ = c.Close()
+		s.turnMu.Lock()
+		s.closed = true
+		if s.turnCancel != nil {
+			s.turnCancel()
 		}
+		s.rootCancel()
+		s.turnMu.Unlock()
+		go func() {
+			s.run <- struct{}{}
+			defer func() { <-s.run; close(s.closeDone) }()
+			var errs []error
+			if c, ok := s.runner.(io.Closer); ok {
+				errs = append(errs, c.Close())
+			}
+			for i := len(s.cleanups) - 1; i >= 0; i-- {
+				ctx, cancel := cleanupCtx(s.root)
+				errs = append(errs, s.cleanups[i](ctx))
+				cancel()
+			}
+			s.turnMu.Lock()
+			errs = append(errs, s.failures)
+			s.turnMu.Unlock()
+			s.closeErr = errors.Join(errs...)
+		}()
 	})
+	ctx, cancel := cleanupCtx(s.root)
+	defer cancel()
+	select {
+	case <-s.closeDone:
+		return s.closeErr
+	case <-ctx.Done():
+		return fmt.Errorf("acp: 等待会话清理：%w", ctx.Err())
+	}
 }

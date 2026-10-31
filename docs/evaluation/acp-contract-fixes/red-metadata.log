@@ -1,0 +1,28 @@
+2026/10/31 20:54:08 INFO connection closed cause="peer connection closed"
+2026/10/31 20:54:08 INFO connection closed cause="peer connection closed"
+2026/10/31 20:54:08 INFO connection closed cause="peer connection closed"
+2026/10/31 20:54:08 INFO connection closed cause="peer connection closed"
+--- FAIL: TestListPersistsBeforePromptAcrossStoreReopen (0.01s)
+    metadata_contract_test.go:28: 
+        	Error Trace:	/Users/costalong/code/go/src/github.com/kart/goagent-contrib/acp/metadata_contract_test.go:28
+        	Error:      	"[]" should have 1 item(s), but has 0
+        	Test:       	TestListPersistsBeforePromptAcrossStoreReopen
+2026/10/31 20:54:08 INFO connection closed cause="peer connection closed"
+2026/10/31 20:54:08 INFO connection closed cause="peer connection closed"
+--- FAIL: TestListPaginationAndLegacyMetadata (0.01s)
+    metadata_contract_test.go:54: 
+        	Error Trace:	/Users/costalong/code/go/src/github.com/kart/goagent-contrib/acp/metadata_contract_test.go:54
+        	Error:      	"[{map[] []  legacy <nil> <nil>} {map[] []  s000 <nil> <nil>} {map[] []  s001 <nil> <nil>} {map[] []  s002 <nil> <nil>} {map[] []  s003 <nil> <nil>} {map[] []  s004 <nil> <nil>} {map[] []  s005 <nil> <nil>} {map[] []  s006 <nil> <nil>} {map[] []  s007 <nil> <nil>} {map[] []  s008 <nil> <nil>} {map[] []  s009 <nil> <nil>} {map[] []  s010 <nil> <nil>} {map[] []  s011 <nil> <nil>} {map[] []  s012 <nil> <nil>} {map[] []  s013 <nil> <nil>} {map[] []  s014 <nil> <nil>} {map[] []  s015 <nil> <nil>} {map[] []  s016 <nil> <nil>} {map[] []  s017 <nil> <nil>} {map[] []  s018 <nil> <nil>} {map[] []  s019 <nil> <nil>} {map[] []  s020 <nil> <nil>} {map[] []  s021 <nil> <nil>} {map[] []  s022 <nil> <nil>} {map[] []  s023 <nil> <nil>} {map[] []  s024 <nil> <nil>} {map[] []  s025 <nil> <nil>} {map[] []  s026 <nil> <nil>} {map[] []  s027 <nil> <nil>} {map[] []  s028 <nil> <nil>} {map[] []  s029 <nil> <nil>} {map[] []  s030 <nil> <nil>} {map[] []  s031 <nil> <nil>} {map[] []  s032 <nil> <nil>} {map[] []  s033 <nil> <nil>} {map[] []  s034 <nil> <nil>} {map[] []  s035 <nil> <nil>} {map[] []  s036 <nil> <nil>} {map[] []  s037 <nil> <nil>} {map[] []  s038 <nil> <nil>} {map[] []  s039 <nil> <nil>} {map[] []  s040 <nil> <nil>} {map[] []  s041 <nil> <nil>} {map[] []  s042 <nil> <nil>} {map[] []  s043 <nil> <nil>} {map[] []  s044 <nil> <nil>} {map[] []  s045 <nil> <nil>} {map[] []  s046 <nil> <nil>} {map[] []  s047 <nil> <nil>} {map[] []  s048 <nil> <nil>} {map[] []  s049 <nil> <nil>} {map[] []  s050 <nil> <nil>} {map[] []  s051 <nil> <nil>} {map[] []  s052 <nil> <nil>} {map[] []  s053 <nil> <nil>} {map[] []  s054 <nil> <nil>} {map[] []  s055 <nil> <nil>} {map[] []  s056 <nil> <nil>} {map[] []  s057 <nil> <nil>} {map[] []  s058 <nil> <nil>} {map[] []  s059 <nil> <nil>} {map[] []  s060 <nil> <nil>} {map[] []  s061 <nil> <nil>} {map[] []  s062 <nil> <nil>} {map[] []  s063 <nil> <nil>} {map[] []  s064 <nil> <nil>} {map[] []  s065 <nil> <nil>} {map[] []  s066 <nil> <nil>} {map[] []  s067 <nil> <nil>} {map[] []  s068 <nil> <nil>} {map[] []  s069 <nil> <nil>} {map[] []  s070 <nil> <nil>} {map[] []  s071 <nil> <nil>} {map[] []  s072 <nil> <nil>} {map[] []  s073 <nil> <nil>} {map[] []  s074 <nil> <nil>} {map[] []  s075 <nil> <nil>} {map[] []  s076 <nil> <nil>} {map[] []  s077 <nil> <nil>} {map[] []  s078 <nil> <nil>} {map[] []  s079 <nil> <nil>} {map[] []  s080 <nil> <nil>} {map[] []  s081 <nil> <nil>} {map[] []  s082 <nil> <nil>} {map[] []  s083 <nil> <nil>} {map[] []  s084 <nil> <nil>} {map[] []  s085 <nil> <nil>} {map[] []  s086 <nil> <nil>} {map[] []  s087 <nil> <nil>} {map[] []  s088 <nil> <nil>} {map[] []  s089 <nil> <nil>} {map[] []  s090 <nil> <nil>} {map[] []  s091 <nil> <nil>} {map[] []  s092 <nil> <nil>} {map[] []  s093 <nil> <nil>} {map[] []  s094 <nil> <nil>} {map[] []  s095 <nil> <nil>} {map[] []  s096 <nil> <nil>} {map[] []  s097 <nil> <nil>} {map[] []  s098 <nil> <nil>} {map[] []  s099 <nil> <nil>} {map[] []  s100 <nil> <nil>}]" should have 100 item(s), but has 102
+        	Test:       	TestListPaginationAndLegacyMetadata
+2026/10/31 20:54:08 INFO connection closed cause="peer connection closed"
+2026/10/31 20:54:08 INFO connection closed cause="peer connection closed"
+--- FAIL: TestMetadataAppendRetriesConflicts (0.00s)
+    metadata_contract_test.go:84: 
+        	Error Trace:	/Users/costalong/code/go/src/github.com/kart/goagent-contrib/acp/metadata_contract_test.go:84
+        	Error:      	Not equal: 
+        	            	expected: 3
+        	            	actual  : 0
+        	Test:       	TestMetadataAppendRetriesConflicts
+FAIL
+FAIL	github.com/kart-io/goagent-contrib/acp	0.518s
+FAIL

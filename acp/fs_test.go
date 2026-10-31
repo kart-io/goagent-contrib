@@ -16,7 +16,7 @@ func fsSession(t *testing.T, caps acpsdk.ClientCapabilities) (*Session, *fakeEdi
 	t.Helper()
 	seen := make(chan *Session, 1)
 	ed := newEditor()
-	h := start(t, NewServer(plainFactory(newModel(), seen)), ed)
+	h := start(t, NewServer(plainFactory(newModel(), seen), WithTerminalCapabilities(env.Capabilities{Network: true})), ed)
 	h.initialize(t, caps)
 	dir := t.TempDir()
 	h.newSession(t, dir)

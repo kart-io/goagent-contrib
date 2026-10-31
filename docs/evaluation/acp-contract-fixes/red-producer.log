@@ -1,0 +1,13 @@
+2026/10/31 20:56:16 INFO connection closed cause="peer connection closed"
+2026/10/31 20:56:16 INFO connection closed cause="peer connection closed"
+--- FAIL: TestPromptWaitsForProducerAfterDone (0.00s)
+    resource_contract_test.go:93: 
+        	Error Trace:	/Users/costalong/code/go/src/github.com/kart/goagent-contrib/acp/resource_contract_test.go:93
+        	Error:      	Should be false
+        	Test:       	TestPromptWaitsForProducerAfterDone
+        	Messages:   	不能在事件生产者退出前交还执行权
+2026/10/31 20:56:16 INFO connection closed cause="peer connection closed"
+2026/10/31 20:56:16 INFO connection closed cause="peer connection closed"
+FAIL
+FAIL	github.com/kart-io/goagent-contrib/acp	0.632s
+FAIL

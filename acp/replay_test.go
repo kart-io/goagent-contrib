@@ -96,7 +96,7 @@ func replayKinds(ed *fakeEditor) []string {
 	return kinds
 }
 
-func TestLoadSessionRejectsOpenedID(t *testing.T) {
+func TestLoadSessionReloadsOpenedID(t *testing.T) {
 	store := session.NewMemoryStore()
 	dir := t.TempDir()
 	h := start(t, NewServer(toolFactory(newModel(say("好")), nil, store, only(echoTool("lookup", nil, ""))), WithSessionStore(store)), newEditor())
@@ -105,7 +105,7 @@ func TestLoadSessionRejectsOpenedID(t *testing.T) {
 	_, err := h.prompt(t, id, "你好")
 	require.NoError(t, err)
 	_, err = h.client.LoadSession(context.Background(), acpsdk.LoadSessionRequest{SessionId: id, Cwd: dir, McpServers: []acpsdk.McpServer{}})
-	requireCode(t, err, -32602)
+	require.NoError(t, err)
 }
 
 func TestLoadSessionFactoryFailureSendsNothing(t *testing.T) {
@@ -188,7 +188,9 @@ func TestLoadSessionSkipsAbortedTurn(t *testing.T) {
 	require.NoError(t, err)
 	user, err := session.NewEvent(session.TypeUserMessage, session.MessageData{Message: llm.Message{Role: "user", Content: "问一"}})
 	require.NoError(t, err)
-	_, err = store.Append(context.Background(), string(id), 0, begin, user)
+	existing, err := store.Read(context.Background(), string(id), 0)
+	require.NoError(t, err)
+	_, err = store.Append(context.Background(), string(id), session.LastSeq(existing), begin, user)
 	require.NoError(t, err)
 	_, err = h.prompt(t, id, "问二")
 	require.NoError(t, err)

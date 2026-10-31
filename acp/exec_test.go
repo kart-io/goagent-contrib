@@ -43,7 +43,7 @@ func TestClientExecutorKillsOnCancel(t *testing.T) {
 	defer cancel()
 	_, err := s.Executor().Run(ctx, env.Command{Argv: []string{"sleep", "60"}})
 	require.ErrorIs(t, err, context.DeadlineExceeded)
-	require.Equal(t, []string{"create", "wait", "kill", "output", "release"}, ed.termCalls)
+	require.Equal(t, []string{"create", "wait", "kill", "wait", "output", "release"}, ed.termCalls)
 }
 
 func TestExecutorFallsBackWithoutTerminal(t *testing.T) {
@@ -70,7 +70,7 @@ func TestTerminalEmbeddedInToolCall(t *testing.T) {
 			return &interfaces.ToolOutput{Success: true, Result: string(res.Output)}, nil
 		})}
 	}
-	h := start(t, NewServer(toolFactory(newModel(calls("run_tests"), say("测试通过")), nil, nil, run)), ed)
+	h := start(t, NewServer(toolFactory(newModel(calls("run_tests"), say("测试通过")), nil, nil, run), WithTerminalCapabilities(env.Capabilities{Network: true})), ed)
 	h.initialize(t, termCaps)
 	_, err := h.prompt(t, h.newSession(t, t.TempDir()), "跑测试")
 	require.NoError(t, err)
@@ -120,7 +120,7 @@ func TestClientExecutorCleanupOutlivesTimeout(t *testing.T) {
 	defer cancel()
 	_, err := s.Executor().Run(ctx, env.Command{Argv: []string{"sleep", "60"}})
 	require.ErrorIs(t, err, context.DeadlineExceeded)
-	require.Equal(t, []string{"create", "wait", "kill", "output", "release"}, ed.termCalls)
+	require.Equal(t, []string{"create", "wait", "kill", "wait", "output", "release"}, ed.termCalls)
 }
 
 func TestAddTerminalIgnoresFinishedCall(t *testing.T) {

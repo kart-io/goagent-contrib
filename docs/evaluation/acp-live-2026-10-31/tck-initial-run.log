@@ -1,0 +1,344 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.15.0, pytest-9.1.1, pluggy-1.7.0
+rootdir: /private/var/folders/7j/6j1y9dtx54d9qzsqp8vx_kdr0000gn/T/goagent-acp-live-e5khh181/venv/lib/python3.15/site-packages/tck/v1/conformance
+collected 74 items
+
+venv/lib/python3.15/site-packages/tck/v1/conformance/test_authentication.py . [  1%]
+.s..s                                                                    [  8%]
+venv/lib/python3.15/site-packages/tck/v1/conformance/test_cancel.py ..   [ 10%]
+venv/lib/python3.15/site-packages/tck/v1/conformance/test_client_capabilities.py . [ 12%]
+......                                                                   [ 20%]
+venv/lib/python3.15/site-packages/tck/v1/conformance/test_diagnostics.py . [ 21%]
+...                                                                      [ 25%]
+venv/lib/python3.15/site-packages/tck/v1/conformance/test_extensibility.py . [ 27%]
+...                                                                      [ 31%]
+venv/lib/python3.15/site-packages/tck/v1/conformance/test_informational.py . [ 32%]
+..                                                                       [ 35%]
+venv/lib/python3.15/site-packages/tck/v1/conformance/test_initialize.py . [ 36%]
+....                                                                     [ 41%]
+venv/lib/python3.15/site-packages/tck/v1/conformance/test_jsonrpc.py ... [ 45%]
+......                                                                   [ 54%]
+venv/lib/python3.15/site-packages/tck/v1/conformance/test_prompt.py .... [ 59%]
+                                                                         [ 59%]
+venv/lib/python3.15/site-packages/tck/v1/conformance/test_prompt_capabilities.py s [ 60%]
+s.                                                                       [ 63%]
+venv/lib/python3.15/site-packages/tck/v1/conformance/test_session.py ... [ 67%]
+F                                                                        [ 68%]
+venv/lib/python3.15/site-packages/tck/v1/conformance/test_session_capabilities.py F [ 70%]
+FFss..sss..ssss                                                          [ 90%]
+venv/lib/python3.15/site-packages/tck/v1/conformance/test_session_config.py s [ 91%]
+sss.                                                                     [ 97%]
+venv/lib/python3.15/site-packages/tck/v1/conformance/test_transport.py . [ 98%]
+.                                                                        [100%]
+
+=================================== FAILURES ===================================
+_________________ test_agent_connects_to_the_stdio_mcp_server __________________
+
+agent_launch = AgentLaunch(command=['/var/folders/7j/6j1y9dtx54d9qzsqp8vx_kdr0000gn/T/goagent-acp-live-e5khh181/goagent-acp-live'], c...81/workspace'), env_overrides={}, startup_timeout=90.0, default_timeout=90.0, max_line_bytes=67108864, close_grace=2.0)
+agent_initialize_result = InitializeOutcome(result={'agentCapabilities': {'auth': {}, 'loadSession': True, 'mcpCapabilities': {}, 'promptCapabil...-acp-live-verification', 'version': 'local'}, 'authMethods': [], 'protocolVersion': 1}, error_message=None, error=None)
+tmp_path = PosixPath('/private/var/folders/7j/6j1y9dtx54d9qzsqp8vx_kdr0000gn/T/pytest-of-costalong/pytest-0/test_agent_connects_to_the_std0')
+
+    @pytest.mark.requirement("ACP-SESSION-004")
+    async def test_agent_connects_to_the_stdio_mcp_server(agent_launch, agent_initialize_result, tmp_path):
+        """ACP-SESSION-004 (ADVISORY). Runs one prompt turn before looking for the stub's marker
+        file, then keeps polling up to --tck-timeout, so an agent that connects lazily or in the
+        background is not misreported."""
+        if agent_initialize_result.result is not None:
+            skip_if_version_mismatch(agent_initialize_result.result)
+        marker = tmp_path / "mcp-marker"
+        async with connected_agent(agent_launch) as agent:
+            entry = await _new_session_with_stub_mcp(
+                agent, tmp_path, marker, timeout=agent_launch.default_timeout
+            )
+            msg = entry.parsed
+            if not (isinstance(msg, dict) and isinstance(msg.get("result"), dict)):
+                pytest.skip(
+                    "prerequisite not met: session/new with a stdio MCP server did not succeed "
+                    f"(see ACP-SESSION-003): {entry.text!r}"
+                )
+            await run_prompt(
+                agent,
+                msg["result"].get("sessionId"),
+                [{"type": "text", "text": "hello"}],
+                timeout=agent_launch.default_timeout,
+            )
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + agent_launch.default_timeout
+            while not marker.exists() and loop.time() < deadline:
+                await asyncio.sleep(0.05)
+>       assert marker.exists(), (
+            "agent never sent an MCP initialize request to the stdio MCP server it was given"
+        )
+E       AssertionError: agent never sent an MCP initialize request to the stdio MCP server it was given
+E       assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/private/var/folders/7j/6j1y9dtx54d9qzsqp8vx_kdr0000gn/T/pytest-of-costalong/pytest-0/test_agent_connects_to_the_std0/mcp-marker').exists
+
+venv/lib/python3.15/site-packages/tck/v1/conformance/test_session.py:135: AssertionError
+----------------------- ACP requirement ACP-SESSION-004 ------------------------
+After `session/new` with that stdio MCP server entry and one prompt turn, the agent has launched the stub server and sent it an MCP `initialize` request. SHOULD-level ("Agents SHOULD connect to all MCP servers specified by the Client"); the prompt turn gives an agent that connects lazily a chance to do so before the check.
+(docs/protocol/v1/draft/session-setup.mdx:638 @ beac4ba96190018e9f6d82e148ff275084c5aa3e)
+-------------------------- ACP transcript (process 0) --------------------------
+--> {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{}}}
+<-- {"jsonrpc":"2.0","id":1,"result":{"agentCapabilities":{"auth":{},"loadSession":true,"mcpCapabilities":{},"promptCapabilities":{"embeddedContext":true},"sessionCapabilities":{"close":{},"list":{}}},"agentInfo":{"name":"goagent-acp-live-verification","version":"local"},"authMethods":[],"protocolVersion":1}}
+--> {"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"/private/var/folders/7j/6j1y9dtx54d9qzsqp8vx_kdr0000gn/T/pytest-of-costalong/pytest-0/test_agent_connects_to_the_std0","mcpServers":[{"name":"acp-tck-stub","command":"/private/var/folders/7j/6j1y9dtx54d9qzsqp8vx_kdr0000gn/T/goagent-acp-live-e5khh181/venv/bin/python","args":["/private/var/folders/7j/6j1y9dtx54d9qzsqp8vx_kdr0000gn/T/goagent-acp-live-e5khh181/venv/lib/python3.15/site-packages/tck/v1/conformance/_mcp_stub.py","/private/var/folders/7j/6j1y9dtx54d9qzsqp8vx_kdr0000gn/T/pytest-of-costalong/pytest-0/test_agent_connects_to_the_std0/mcp-marker"],"env":[]}]}}
+<-- {"jsonrpc":"2.0","id":2,"result":{"sessionId":"sess_67209a48-d7bb-4ff7-aad8-d9cc683e7375"}}
+--> {"jsonrpc":"2.0","id":3,"method":"session/prompt","params":{"sessionId":"sess_67209a48-d7bb-4ff7-aad8-d9cc683e7375","prompt":[{"type":"text","text":"hello"}]}}
+<-- {"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess_67209a48-d7bb-4ff7-aad8-d9cc683e7375","update":{"content":{"text":"Hello","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+<-- {"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess_67209a48-d7bb-4ff7-aad8-d9cc683e7375","update":{"content":{"text":"!","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+<-- {"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}
+---------------------------- ACP stderr (process 0) ----------------------------
+{"elapsed_ms":147,"event":"real_model_request","model":"llama3.1:8b","n":1,"status":200}
+2026/10/31 21:11:17 INFO connection closed cause="peer connection closed"
+{"event":"session_closed","session_id":"sess_67209a48-d7bb-4ff7-aad8-d9cc683e7375"}
+_______________________ test_load_succeeds_and_validates _______________________
+
+agent_launch = AgentLaunch(command=['/var/folders/7j/6j1y9dtx54d9qzsqp8vx_kdr0000gn/T/goagent-acp-live-e5khh181/goagent-acp-live'], c...81/workspace'), env_overrides={}, startup_timeout=90.0, default_timeout=90.0, max_line_bytes=67108864, close_grace=2.0)
+tmp_path = PosixPath('/private/var/folders/7j/6j1y9dtx54d9qzsqp8vx_kdr0000gn/T/pytest-of-costalong/pytest-0/test_load_succeeds_and_validat0')
+
+    @pytest.mark.requirement("ACP-LOAD-001")
+    @pytest.mark.capability("agentCapabilities.loadSession", boolean=True)
+    async def test_load_succeeds_and_validates(agent_launch, tmp_path):
+        """ACP-LOAD-001."""
+        async with connected_agent(agent_launch) as agent:
+            session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
+            await run_prompt(
+                agent, session_id, [{"type": "text", "text": "hello"}], timeout=agent_launch.default_timeout
+            )
+    
+            req_id = await agent.send_request(
+                "session/load",
+                {"sessionId": session_id, "cwd": str(tmp_path), "mcpServers": []},
+            )
+            # A load may legitimately replay history before its response -- drain it like
+            # `run_prompt` does, rather than assuming the very next line is the response.
+            entry = await agent.wait_for_response(req_id, timeout=agent_launch.default_timeout)
+            msg = entry.parsed
+>           assert isinstance(msg, dict) and "result" in msg, (
+                f"session/load did not succeed: {entry.text!r}"
+            )
+E           AssertionError: session/load did not succeed: '{"jsonrpc":"2.0","id":4,"error":{"code":-32602,"message":"Invalid params","data":{"error":"acp: 会话 \\"sess_00e8dc15-7ea1-47ef-9ed9-0149f7211926\\" 已打开，须先 session/close"}}}'
+E           assert (True and 'result' in {'jsonrpc': '2.0', 'id': 4, 'error': {'code': -32602, 'message': 'Invalid params', 'data': {'error': 'acp: 会话 "sess_00e8dc15-7ea1-47ef-9ed9-0149f7211926" 已打开，须先 session/close'}}})
+E            +  where True = isinstance({'jsonrpc': '2.0', 'id': 4, 'error': {'code': -32602, 'message': 'Invalid params', 'data': {'error': 'acp: 会话 "sess_00e8dc15-7ea1-47ef-9ed9-0149f7211926" 已打开，须先 session/close'}}}, dict)
+
+venv/lib/python3.15/site-packages/tck/v1/conformance/test_session_capabilities.py:54: AssertionError
+------------------------- ACP requirement ACP-LOAD-001 -------------------------
+`session/load` with a valid `sessionId`, `cwd`, and `mcpServers` succeeds with a schema-valid `LoadSessionResponse` object.
+(docs/protocol/v1/draft/session-setup.mdx:106,110-200 (`{}` result example at 191-200); schema/v1/schema.unstable.json#/$defs/AgentCapabilities/properties/loadSession; schema/v1/schema.unstable.json#/$defs/LoadSessionResponse; schema/v1/schema.unstable.json#/$defs/LoadSessionRequest (C1, L1, L4) @ beac4ba96190018e9f6d82e148ff275084c5aa3e)
+-------------------------- ACP transcript (process 0) --------------------------
+--> {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{}}}
+<-- {"jsonrpc":"2.0","id":1,"result":{"agentCapabilities":{"auth":{},"loadSession":true,"mcpCapabilities":{},"promptCapabilities":{"embeddedContext":true},"sessionCapabilities":{"close":{},"list":{}}},"agentInfo":{"name":"goagent-acp-live-verification","version":"local"},"authMethods":[],"protocolVersion":1}}
+--> {"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"/private/var/folders/7j/6j1y9dtx54d9qzsqp8vx_kdr0000gn/T/pytest-of-costalong/pytest-0/test_load_succeeds_and_validat0","mcpServers":[]}}
+<-- {"jsonrpc":"2.0","id":2,"result":{"sessionId":"sess_00e8dc15-7ea1-47ef-9ed9-0149f7211926"}}
+--> {"jsonrpc":"2.0","id":3,"method":"session/prompt","params":{"sessionId":"sess_00e8dc15-7ea1-47ef-9ed9-0149f7211926","prompt":[{"type":"text","text":"hello"}]}}
+<-- {"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess_00e8dc15-7ea1-47ef-9ed9-0149f7211926","update":{"content":{"text":"hello","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+<-- {"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}
+--> {"jsonrpc":"2.0","id":4,"method":"session/load","params":{"sessionId":"sess_00e8dc15-7ea1-47ef-9ed9-0149f7211926","cwd":"/private/var/folders/7j/6j1y9dtx54d9qzsqp8vx_kdr0000gn/T/pytest-of-costalong/pytest-0/test_load_succeeds_and_validat0","mcpServers":[]}}
+<-- {"jsonrpc":"2.0","id":4,"error":{"code":-32602,"message":"Invalid params","data":{"error":"acp: 会话 \"sess_00e8dc15-7ea1-47ef-9ed9-0149f7211926\" 已打开，须先 session/close"}}}
+---------------------------- ACP stderr (process 0) ----------------------------
+{"elapsed_ms":615,"event":"real_model_request","model":"llama3.1:8b","n":1,"status":200}
+2026/10/31 21:11:18 INFO connection closed cause="peer connection closed"
+{"event":"session_closed","session_id":"sess_00e8dc15-7ea1-47ef-9ed9-0149f7211926"}
+____________ test_load_replays_before_responding_and_nothing_after _____________
+
+agent_launch = AgentLaunch(command=['/var/folders/7j/6j1y9dtx54d9qzsqp8vx_kdr0000gn/T/goagent-acp-live-e5khh181/goagent-acp-live'], c...81/workspace'), env_overrides={}, startup_timeout=90.0, default_timeout=90.0, max_line_bytes=67108864, close_grace=2.0)
+tmp_path = PosixPath('/private/var/folders/7j/6j1y9dtx54d9qzsqp8vx_kdr0000gn/T/pytest-of-costalong/pytest-0/test_load_replays_before_respo0')
+
+    @pytest.mark.requirement("ACP-LOAD-002")
+    @pytest.mark.capability("agentCapabilities.loadSession", boolean=True)
+    async def test_load_replays_before_responding_and_nothing_after(agent_launch, tmp_path):
+        """ACP-LOAD-002. The "before" half is structural: `wait_for_response` reads line-by-line
+        and stops at the matching response, so anything already seen arrived first. This test
+        adds the "after" half: no further history-kind update (`HISTORY_KINDS`) for this session
+        may arrive within a quiet period once the response is in hand. Session-state updates
+        (e.g. `available_commands_update`) are allowed outside a turn and are ignored."""
+        async with connected_agent(agent_launch) as agent:
+            session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
+            await run_prompt(
+                agent, session_id, [{"type": "text", "text": "hello"}], timeout=agent_launch.default_timeout
+            )
+    
+            req_id = await agent.send_request(
+                "session/load",
+                {"sessionId": session_id, "cwd": str(tmp_path), "mcpServers": []},
+            )
+            entry = await agent.wait_for_response(req_id, timeout=agent_launch.default_timeout)
+            msg = entry.parsed
+>           assert isinstance(msg, dict) and "result" in msg, (
+                f"session/load did not succeed: {entry.text!r}"
+            )
+E           AssertionError: session/load did not succeed: '{"jsonrpc":"2.0","id":4,"error":{"code":-32602,"message":"Invalid params","data":{"error":"acp: 会话 \\"sess_5b3b7b95-5601-4228-afe2-da54b7a69506\\" 已打开，须先 session/close"}}}'
+E           assert (True and 'result' in {'jsonrpc': '2.0', 'id': 4, 'error': {'code': -32602, 'message': 'Invalid params', 'data': {'error': 'acp: 会话 "sess_5b3b7b95-5601-4228-afe2-da54b7a69506" 已打开，须先 session/close'}}})
+E            +  where True = isinstance({'jsonrpc': '2.0', 'id': 4, 'error': {'code': -32602, 'message': 'Invalid params', 'data': {'error': 'acp: 会话 "sess_5b3b7b95-5601-4228-afe2-da54b7a69506" 已打开，须先 session/close'}}}, dict)
+
+venv/lib/python3.15/site-packages/tck/v1/conformance/test_session_capabilities.py:81: AssertionError
+------------------------- ACP requirement ACP-LOAD-002 -------------------------
+Every history update belonging to the `session/load` replay arrives before the `session/load` response; no history-kind update (`user_message_chunk`, `agent_message_chunk`, `agent_thought_chunk`, `tool_call`, `tool_call_update`) for the session arrives after it. Session-state updates (e.g. `available_commands_update`) are allowed outside a turn and are not judged. No claim is made about how many history updates are replayed or their fidelity.
+(docs/protocol/v1/draft/session-setup.mdx:136-142,191-192; docs/protocol/v1/draft/prompt-turn.mdx:38 @ beac4ba96190018e9f6d82e148ff275084c5aa3e)
+-------------------------- ACP transcript (process 0) --------------------------
+--> {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{}}}
+<-- {"jsonrpc":"2.0","id":1,"result":{"agentCapabilities":{"auth":{},"loadSession":true,"mcpCapabilities":{},"promptCapabilities":{"embeddedContext":true},"sessionCapabilities":{"close":{},"list":{}}},"agentInfo":{"name":"goagent-acp-live-verification","version":"local"},"authMethods":[],"protocolVersion":1}}
+--> {"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"/private/var/folders/7j/6j1y9dtx54d9qzsqp8vx_kdr0000gn/T/pytest-of-costalong/pytest-0/test_load_replays_before_respo0","mcpServers":[]}}
+<-- {"jsonrpc":"2.0","id":2,"result":{"sessionId":"sess_5b3b7b95-5601-4228-afe2-da54b7a69506"}}
+--> {"jsonrpc":"2.0","id":3,"method":"session/prompt","params":{"sessionId":"sess_5b3b7b95-5601-4228-afe2-da54b7a69506","prompt":[{"type":"text","text":"hello"}]}}
+<-- {"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess_5b3b7b95-5601-4228-afe2-da54b7a69506","update":{"content":{"text":"\"","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+<-- {"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess_5b3b7b95-5601-4228-afe2-da54b7a69506","update":{"content":{"text":"Hello","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+<-- {"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess_5b3b7b95-5601-4228-afe2-da54b7a69506","update":{"content":{"text":"\"","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+<-- {"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}
+--> {"jsonrpc":"2.0","id":4,"method":"session/load","params":{"sessionId":"sess_5b3b7b95-5601-4228-afe2-da54b7a69506","cwd":"/private/var/folders/7j/6j1y9dtx54d9qzsqp8vx_kdr0000gn/T/pytest-of-costalong/pytest-0/test_load_replays_before_respo0","mcpServers":[]}}
+<-- {"jsonrpc":"2.0","id":4,"error":{"code":-32602,"message":"Invalid params","data":{"error":"acp: 会话 \"sess_5b3b7b95-5601-4228-afe2-da54b7a69506\" 已打开，须先 session/close"}}}
+---------------------------- ACP stderr (process 0) ----------------------------
+{"elapsed_ms":29,"event":"real_model_request","model":"llama3.1:8b","n":1,"status":200}
+2026/10/31 21:11:18 INFO connection closed cause="peer connection closed"
+{"event":"session_closed","session_id":"sess_5b3b7b95-5601-4228-afe2-da54b7a69506"}
+__________________ test_load_empty_result_is_object_not_null ___________________
+
+agent_launch = AgentLaunch(command=['/var/folders/7j/6j1y9dtx54d9qzsqp8vx_kdr0000gn/T/goagent-acp-live-e5khh181/goagent-acp-live'], c...81/workspace'), env_overrides={}, startup_timeout=90.0, default_timeout=90.0, max_line_bytes=67108864, close_grace=2.0)
+tmp_path = PosixPath('/private/var/folders/7j/6j1y9dtx54d9qzsqp8vx_kdr0000gn/T/pytest-of-costalong/pytest-0/test_load_empty_result_is_obje0')
+
+    @pytest.mark.requirement("ACP-LOAD-003")
+    @pytest.mark.capability("agentCapabilities.loadSession", boolean=True)
+    async def test_load_empty_result_is_object_not_null(agent_launch, tmp_path):
+        """ACP-LOAD-003 (ADVISORY). Mandatory schema validation (ACP-LOAD-001) already tolerates a
+        literal `null` result for this all-optional-fields response, so this test asserts the
+        stricter, non-schema-visible fact directly: the result must be `{}`-shaped, not `null`."""
+        async with connected_agent(agent_launch) as agent:
+            session_id = await new_session(agent, tmp_path, timeout=agent_launch.default_timeout)
+    
+            req_id = await agent.send_request(
+                "session/load",
+                {"sessionId": session_id, "cwd": str(tmp_path), "mcpServers": []},
+            )
+            entry = await agent.wait_for_response(req_id, timeout=agent_launch.default_timeout)
+            msg = entry.parsed
+>           assert isinstance(msg, dict) and "result" in msg, (
+                f"session/load did not succeed: {entry.text!r}"
+            )
+E           AssertionError: session/load did not succeed: '{"jsonrpc":"2.0","id":3,"error":{"code":-32602,"message":"Invalid params","data":{"error":"acp: 会话 \\"sess_e82e8dd6-8ceb-4ccc-bc5a-6d8a1a6473b0\\" 已打开，须先 session/close"}}}'
+E           assert (True and 'result' in {'jsonrpc': '2.0', 'id': 3, 'error': {'code': -32602, 'message': 'Invalid params', 'data': {'error': 'acp: 会话 "sess_e82e8dd6-8ceb-4ccc-bc5a-6d8a1a6473b0" 已打开，须先 session/close'}}})
+E            +  where True = isinstance({'jsonrpc': '2.0', 'id': 3, 'error': {'code': -32602, 'message': 'Invalid params', 'data': {'error': 'acp: 会话 "sess_e82e8dd6-8ceb-4ccc-bc5a-6d8a1a6473b0" 已打开，须先 session/close'}}}, dict)
+
+venv/lib/python3.15/site-packages/tck/v1/conformance/test_session_capabilities.py:113: AssertionError
+------------------------- ACP requirement ACP-LOAD-003 -------------------------
+The `session/load` empty result is `{}` (an object), not `null`. The schema allows only an object and the docs example shows `{}` (corrected from `null` upstream in `d89c8d31`). ADVISORY only: upstream's Rust schema crate tolerates `null` for defaultable payloads on receipt (`ac82df63`, deserialization only; the schema is unchanged), and the Python SDK coerces it too, so mandatory schema validation (ACP-LOAD-001) treats `null` as equivalent for an all-optional object response.
+(docs/protocol/v1/draft/session-setup.mdx:194-200; schema/v1/schema.unstable.json#/$defs/LoadSessionResponse; agent-client-protocol-schema/src/serde_util.rs:30-38 @ beac4ba96190018e9f6d82e148ff275084c5aa3e)
+-------------------------- ACP transcript (process 0) --------------------------
+--> {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{}}}
+<-- {"jsonrpc":"2.0","id":1,"result":{"agentCapabilities":{"auth":{},"loadSession":true,"mcpCapabilities":{},"promptCapabilities":{"embeddedContext":true},"sessionCapabilities":{"close":{},"list":{}}},"agentInfo":{"name":"goagent-acp-live-verification","version":"local"},"authMethods":[],"protocolVersion":1}}
+--> {"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"/private/var/folders/7j/6j1y9dtx54d9qzsqp8vx_kdr0000gn/T/pytest-of-costalong/pytest-0/test_load_empty_result_is_obje0","mcpServers":[]}}
+<-- {"jsonrpc":"2.0","id":2,"result":{"sessionId":"sess_e82e8dd6-8ceb-4ccc-bc5a-6d8a1a6473b0"}}
+--> {"jsonrpc":"2.0","id":3,"method":"session/load","params":{"sessionId":"sess_e82e8dd6-8ceb-4ccc-bc5a-6d8a1a6473b0","cwd":"/private/var/folders/7j/6j1y9dtx54d9qzsqp8vx_kdr0000gn/T/pytest-of-costalong/pytest-0/test_load_empty_result_is_obje0","mcpServers":[]}}
+<-- {"jsonrpc":"2.0","id":3,"error":{"code":-32602,"message":"Invalid params","data":{"error":"acp: 会话 \"sess_e82e8dd6-8ceb-4ccc-bc5a-6d8a1a6473b0\" 已打开，须先 session/close"}}}
+---------------------------- ACP stderr (process 0) ----------------------------
+{"event":"session_closed","session_id":"sess_e82e8dd6-8ceb-4ccc-bc5a-6d8a1a6473b0"}
+2026/10/31 21:11:18 INFO connection closed cause="peer connection closed"
+========================= ACP TCK requirement summary ==========================
+[MANDATORY]
+  ACP-AUTH-002                 PASS
+  ACP-AUTH-006                 PASS
+  ACP-CANCEL-001               PASS
+  ACP-CANCEL-002               PASS
+  ACP-CLIENTCAP-001            PASS
+  ACP-CLIENTCAP-002            PASS
+  ACP-CLIENTCAP-003            PASS
+  ACP-CLIENTCAP-004            PASS
+  ACP-CLIENTCAP-005            PASS
+  ACP-CLIENTCAP-006            PASS
+  ACP-CLIENTCAP-007            PASS
+  ACP-CONFIG-003               PASS
+  ACP-EXT-001                  PASS
+  ACP-INIT-001                 PASS
+  ACP-INIT-002                 PASS
+  ACP-INIT-003                 PASS
+  ACP-JSONRPC-001              PASS
+  ACP-JSONRPC-002              PASS
+  ACP-JSONRPC-003              PASS
+  ACP-JSONRPC-006              PASS
+  ACP-JSONRPC-007              PASS
+  ACP-PROMPT-001               PASS
+  ACP-PROMPT-002               PASS
+  ACP-PROMPT-003               PASS
+  ACP-PROMPT-004               PASS
+  ACP-SCHEMA-001               PASS
+  ACP-SESSION-001              PASS
+  ACP-SESSION-002              PASS
+  ACP-SESSION-003              PASS
+  ACP-TRANSPORT-001            PASS
+  ACP-TRANSPORT-002            PASS
+[CAPABILITY]
+  ACP-ADDDIRS-001              SKIPPED
+  ACP-AUTH-003                 SKIPPED
+  ACP-AUTH-004                 SKIPPED
+  ACP-CLOSE-001                PASS
+  ACP-CLOSE-002                PASS
+  ACP-CONFIG-001               SKIPPED
+  ACP-CONFIG-002               SKIPPED
+  ACP-DELETE-001               SKIPPED
+  ACP-DELETE-003               SKIPPED
+  ACP-LIST-001                 PASS
+  ACP-LIST-002                 PASS
+  ACP-LOAD-001                 FAIL
+      `session/load` with a valid `sessionId`, `cwd`, and `mcpServers` succeeds with a schema-valid `LoadSessionResponse` object.
+      (docs/protocol/v1/draft/session-setup.mdx:106,110-200 (`{}` result example at 191-200); schema/v1/schema.unstable.json#/$defs/AgentCapabilities/properties/loadSession; schema/v1/schema.unstable.json#/$defs/LoadSessionResponse; schema/v1/schema.unstable.json#/$defs/LoadSessionRequest (C1, L1, L4) @ beac4ba96190018e9f6d82e148ff275084c5aa3e)
+  ACP-LOAD-002                 FAIL
+      Every history update belonging to the `session/load` replay arrives before the `session/load` response; no history-kind update (`user_message_chunk`, `agent_message_chunk`, `agent_thought_chunk`, `tool_call`, `tool_call_update`) for the session arrives after it. Session-state updates (e.g. `available_commands_update`) are allowed outside a turn and are not judged. No claim is made about how many history updates are replayed or their fidelity.
+      (docs/protocol/v1/draft/session-setup.mdx:136-142,191-192; docs/protocol/v1/draft/prompt-turn.mdx:38 @ beac4ba96190018e9f6d82e148ff275084c5aa3e)
+  ACP-MODES-001                SKIPPED
+  ACP-MODES-002                SKIPPED
+  ACP-PROMPTCAP-001            SKIPPED
+  ACP-PROMPTCAP-002            SKIPPED
+  ACP-PROMPTCAP-003            PASS
+  ACP-RESUME-001               SKIPPED
+  ACP-RESUME-002               SKIPPED
+  ACP-SYSPROMPT-001            SKIPPED
+  ACP-SYSPROMPT-002            SKIPPED
+  ACP-SYSPROMPT-003            SKIPPED
+[ADVISORY]
+  ACP-AUTH-001                 PASS
+  ACP-AUTH-005                 PASS
+  ACP-DELETE-002               SKIPPED
+  ACP-ERROR-001                PASS
+  ACP-ERROR-002                PASS
+  ACP-EXT-002                  PASS
+  ACP-INIT-004                 PASS
+  ACP-JSONRPC-004              PASS
+  ACP-JSONRPC-005              PASS
+  ACP-LOAD-003                 FAIL
+      The `session/load` empty result is `{}` (an object), not `null`. The schema allows only an object and the docs example shows `{}` (corrected from `null` upstream in `d89c8d31`). ADVISORY only: upstream's Rust schema crate tolerates `null` for defaultable payloads on receipt (`ac82df63`, deserialization only; the schema is unchanged), and the Python SDK coerces it too, so mandatory schema validation (ACP-LOAD-001) treats `null` as equivalent for an all-optional object response.
+      (docs/protocol/v1/draft/session-setup.mdx:194-200; schema/v1/schema.unstable.json#/$defs/LoadSessionResponse; agent-client-protocol-schema/src/serde_util.rs:30-38 @ beac4ba96190018e9f6d82e148ff275084c5aa3e)
+  ACP-META-001                 PASS
+  ACP-SCHEMA-002               PASS
+  ACP-SESSION-004              FAIL
+      After `session/new` with that stdio MCP server entry and one prompt turn, the agent has launched the stub server and sent it an MCP `initialize` request. SHOULD-level ("Agents SHOULD connect to all MCP servers specified by the Client"); the prompt turn gives an agent that connects lazily a chance to do so before the check.
+      (docs/protocol/v1/draft/session-setup.mdx:638 @ beac4ba96190018e9f6d82e148ff275084c5aa3e)
+[INFORMATIONAL]
+  ACP-INFO-INVALIDREQ-001      PASS  (silent; conn after: usable (sessionId='sess_604a02c6-b8c2-4ccd-b162-deaaca93bb1e'))
+  ACP-INFO-PARSE-001           PASS  (silent; conn after: usable (sessionId='sess_1f070f5f-d965-4b4a-9274-c470d985e84b'))
+  ACP-INFO-UNKNOWNSESSION-001  PASS  (replied with error code -32602)
+  ACP-SHUTDOWN-001             PASS
+  ACP-STDERR-001               PASS  (158 stderr byte(s))
+
+  MANDATORY      PASS=31, FAIL=0, SKIPPED=0, NOT_TESTED=0
+  CAPABILITY     PASS=5, FAIL=2, SKIPPED=16, NOT_TESTED=0
+  ADVISORY       PASS=10, FAIL=2, SKIPPED=1, NOT_TESTED=0
+  INFORMATIONAL  PASS=5, FAIL=0, SKIPPED=0, NOT_TESTED=0
+VERDICT: NOT CONFORMANT (2 capability failures)
+=========================== short test summary info ============================
+SKIPPED [1] venv/lib/python3.15/site-packages/tck/v1/conformance/test_authentication.py:77: no --tck-auth-method given; cannot exercise the authenticate flow
+SKIPPED [1] venv/lib/python3.15/site-packages/tck/v1/conformance/test_authentication.py:176: capability 'agentCapabilities.auth.logout' not advertised by the agent under test
+SKIPPED [1] venv/lib/python3.15/site-packages/tck/v1/conformance/test_prompt_capabilities.py:46: capability 'agentCapabilities.promptCapabilities.image' not advertised by the agent under test
+SKIPPED [1] venv/lib/python3.15/site-packages/tck/v1/conformance/test_prompt_capabilities.py:65: capability 'agentCapabilities.promptCapabilities.audio' not advertised by the agent under test
+SKIPPED [1] venv/lib/python3.15/site-packages/tck/v1/conformance/test_session_capabilities.py:124: capability 'agentCapabilities.sessionCapabilities.resume' not advertised by the agent under test
+SKIPPED [1] venv/lib/python3.15/site-packages/tck/v1/conformance/test_session_capabilities.py:143: capability 'agentCapabilities.sessionCapabilities.resume' not advertised by the agent under test
+SKIPPED [1] venv/lib/python3.15/site-packages/tck/v1/conformance/test_session_capabilities.py:253: capability 'agentCapabilities.sessionCapabilities.delete' not advertised by the agent under test
+SKIPPED [1] venv/lib/python3.15/site-packages/tck/v1/conformance/test_session_capabilities.py:271: capability 'agentCapabilities.sessionCapabilities.delete' not advertised by the agent under test
+SKIPPED [1] venv/lib/python3.15/site-packages/tck/v1/conformance/test_session_capabilities.py:290: capability 'agentCapabilities.sessionCapabilities.delete' not advertised by the agent under test
+SKIPPED [1] venv/lib/python3.15/site-packages/tck/v1/conformance/test_session_capabilities.py:434: capability 'agentCapabilities.sessionCapabilities.additionalDirectories' not advertised by the agent under test
+SKIPPED [1] venv/lib/python3.15/site-packages/tck/v1/conformance/test_session_capabilities.py:475: capability 'agentCapabilities.sessionCapabilities.systemPrompt' not advertised by the agent under test
+SKIPPED [1] venv/lib/python3.15/site-packages/tck/v1/conformance/test_session_capabilities.py:494: capability 'agentCapabilities.sessionCapabilities.systemPrompt' not advertised by the agent under test
+SKIPPED [1] venv/lib/python3.15/site-packages/tck/v1/conformance/test_session_capabilities.py:516: capability 'agentCapabilities.sessionCapabilities.systemPrompt' not advertised by the agent under test
+SKIPPED [1] venv/lib/python3.15/site-packages/tck/v1/conformance/test_session_config.py:73: session/new returned no modes/configOptions
+SKIPPED [1] venv/lib/python3.15/site-packages/tck/v1/conformance/test_session_config.py:97: session/new returned no modes/configOptions
+SKIPPED [1] venv/lib/python3.15/site-packages/tck/v1/conformance/test_session_config.py:166: session/new returned no modes/configOptions
+SKIPPED [1] venv/lib/python3.15/site-packages/tck/v1/conformance/test_session_config.py:197: session/new returned no modes/configOptions
+============= 4 failed, 53 passed, 17 skipped in 147.45s (0:02:27) =============

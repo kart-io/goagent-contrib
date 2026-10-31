@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/kart-io/goagent/builder"
 	"github.com/kart-io/goagent/core/session"
+	"github.com/kart-io/goagent/harness/env"
 )
 
 // Factory 为每个 ACP 会话构建一个 Agent。构建时必须 WithSessionID(s.ID())，工具经 s.Pipeline()
@@ -20,7 +21,7 @@ type Factory func(ctx context.Context, s *Session) (Runner, error)
 
 // Runner 是本包对 Agent 的最小要求，*builder.ConfigurableAgent[C, S] 满足它。
 // Runner 还实现 io.Closer 时，本包在 session/close、session/load 失败回滚与连接结束时调用一次 Close，
-// 此时该会话的 prompt 已结束（或等待超时）。
+// 仅在该会话的事件生产者已经退出后调用，等待超时仍保留资源责任。
 type Runner interface {
 	ExecuteStream(ctx context.Context, input any) (<-chan builder.AgentEvent, error)
 }
@@ -49,27 +50,28 @@ type Server struct {
 	name, version string
 	store         session.Store
 	kind          func(string) acpsdk.ToolKind
+	fileWrites    chan struct{}
+	terminalCaps  *env.Capabilities
 }
 
 // NewServer 创建 Server。
 func NewServer(f Factory, opts ...Option) *Server {
-	s := &Server{factory: f, name: "goagent", version: "dev", kind: func(string) acpsdk.ToolKind { return acpsdk.ToolKindOther }}
+	s := &Server{fileWrites: make(chan struct{}, 1), factory: f, name: "goagent", version: "dev", kind: func(string) acpsdk.ToolKind { return acpsdk.ToolKindOther }}
 	for _, opt := range opts {
 		opt(s)
 	}
 	return s
 }
 
-// Serve 处理一条连接，直到对端断开（返回 nil）或 ctx 结束（返回 ctx.Err()）。返回前取消全部进行中的 prompt，
-// 并为每个会话最多等待 endTurnTimeout 让 prompt 退出、再关闭实现 io.Closer 的 Runner；
-// 不等待 SDK 其余的请求处理 goroutine。SDK 的读循环在 in 关闭后才退出，ctx 结束后调用方应关闭 in。
-func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
+// Serve 返回前取消并回收已发布及构造中的会话，释放错误与 ctx.Err() 合并返回。
+// 不配合取消的宿主保留清理责任；SDK 读循环须由调用方关闭输入后结束。
+func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) (err error) {
 	if s.factory == nil {
 		return errors.New("acp: Factory 不能为空")
 	}
 	base, cancel := context.WithCancel(ctx)
-	c := &conn{srv: s, base: base, ready: make(chan struct{}), sessions: map[string]*Session{}, cwds: map[string]string{}, loading: map[string]bool{}}
-	defer c.shutdown(cancel)
+	c := &conn{srv: s, base: base, ready: make(chan struct{}), sessions: map[string]*Session{}, cwds: map[string]string{}, loading: map[string]bool{}, pending: map[*Session]bool{}}
+	defer func() { err = errors.Join(err, c.shutdown(cancel)) }()
 	c.peer = acpsdk.NewAgentSideConnection(c, out, in)
 	close(c.ready)
 	select {
@@ -80,8 +82,8 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 	}
 }
 
-// shutdown 取消连接上的全部工作并关闭全部会话；之后完成构建的会话直接关闭。
-func (c *conn) shutdown(cancel context.CancelFunc) {
+// shutdown 取消连接上的全部工作，回收已发布和构造中的会话并报告清理失败。
+func (c *conn) shutdown(cancel context.CancelFunc) error {
 	cancel()
 	c.mu.Lock()
 	c.closed = true
@@ -89,13 +91,18 @@ func (c *conn) shutdown(cancel context.CancelFunc) {
 	for _, s := range c.sessions {
 		sessions = append(sessions, s)
 	}
-	clear(c.sessions)
+	for s := range c.pending {
+		sessions = append(sessions, s)
+	}
 	c.mu.Unlock()
 	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var errs []error
 	for _, s := range sessions {
-		wg.Go(s.close)
+		wg.Go(func() { err := s.close(); mu.Lock(); errs = append(errs, err); mu.Unlock() })
 	}
 	wg.Wait()
+	return errors.Join(errs...)
 }
 
 // conn 是一条 ACP 连接上的 Agent 实现。
@@ -111,6 +118,7 @@ type conn struct {
 	cwds     map[string]string // 本连接新建或加载过的会话的工作区，供 session/list
 	loading  map[string]bool   // 正在 session/load 的 ID，与 sessions 一起保证同一 ID 只打开一次
 	closed   bool              // 连接已结束
+	pending  map[*Session]bool
 }
 
 var (
@@ -164,6 +172,10 @@ func (c *conn) NewSession(ctx context.Context, p acpsdk.NewSessionRequest) (acps
 	if err != nil {
 		return acpsdk.NewSessionResponse{}, err
 	}
+	if err := s.persistMetadata(ctx); err != nil {
+		cleanupErr := c.discard(s)
+		return acpsdk.NewSessionResponse{}, internalError("保存会话元数据", errors.Join(err, cleanupErr))
+	}
 	if err := c.register(s); err != nil {
 		return acpsdk.NewSessionResponse{}, err
 	}
@@ -176,14 +188,37 @@ func (c *conn) build(ctx context.Context, id, cwd string, mcp []acpsdk.McpServer
 	if err != nil {
 		return nil, acpsdk.NewInvalidParams(map[string]any{"error": err.Error()})
 	}
-	runner, err := c.srv.factory(ctx, s)
-	if err != nil {
-		return nil, internalError("构建 Agent", err)
+	// 构造期间也登记所有权；关闭必须等待 Factory 返回后才能释放资源。
+	s.run <- struct{}{}
+	c.mu.Lock()
+	closed := c.closed
+	if !closed {
+		c.pending[s] = true
 	}
-	if runner == nil {
-		return nil, internalError("构建 Agent", errors.New("Factory 返回了 nil Runner"))
+	c.mu.Unlock()
+	buildCtx, cancel := context.WithCancel(ctx)
+	stop := context.AfterFunc(s.root, cancel)
+	var runner Runner
+	if !closed {
+		runner, err = c.srv.factory(buildCtx, s)
+	} else {
+		err = errors.New("连接已结束")
 	}
+	stop()
+	cancel()
 	s.runner = runner
+	if err == nil && ctx.Err() != nil {
+		err = ctx.Err()
+	}
+	if err == nil && runner == nil {
+		err = errors.New("Factory 返回了 nil Runner")
+	}
+	<-s.run
+	// 成功对象由 register 移出 pending，避免构造与登记之间的断开窗口。
+	if err != nil {
+		cleanupErr := c.discard(s)
+		return nil, internalError("构建 Agent", errors.Join(err, cleanupErr))
+	}
 	return s, nil
 }
 
@@ -192,9 +227,9 @@ func (c *conn) register(s *Session) error {
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
-		s.closeRunner()
-		return internalError("打开会话", errors.New("连接已结束"))
+		return internalError("打开会话", errors.Join(errors.New("连接已结束"), c.discard(s)))
 	}
+	delete(c.pending, s)
 	c.sessions[s.id] = s
 	c.cwds[s.id] = s.cwd
 	c.mu.Unlock()
@@ -209,7 +244,7 @@ func (c *conn) session(id acpsdk.SessionId) (*Session, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	s, ok := c.sessions[string(id)]
-	if !ok {
+	if !ok || c.loading[string(id)] {
 		return nil, missing(id)
 	}
 	return s, nil
@@ -221,7 +256,9 @@ func (c *conn) CloseSession(_ context.Context, p acpsdk.CloseSessionRequest) (ac
 	if err != nil {
 		return acpsdk.CloseSessionResponse{}, err
 	}
-	s.close()
+	if err := s.close(); err != nil {
+		return acpsdk.CloseSessionResponse{}, internalError("关闭会话", err)
+	}
 	c.mu.Lock()
 	if c.sessions[string(p.SessionId)] == s {
 		delete(c.sessions, string(p.SessionId))
@@ -252,4 +289,22 @@ func (c *conn) SetSessionConfigOption(context.Context, acpsdk.SetSessionConfigOp
 
 func (c *conn) ResumeSession(context.Context, acpsdk.ResumeSessionRequest) (acpsdk.ResumeSessionResponse, error) {
 	return acpsdk.ResumeSessionResponse{}, acpsdk.NewMethodNotFound("session/resume")
+}
+
+// discard 清理未发布的对象，清理超时仍保留同 ID 的所有权，直到实际释放完成。
+func (c *conn) discard(s *Session) error {
+	err := s.close()
+	remove := func() { c.mu.Lock(); delete(c.pending, s); c.mu.Unlock() }
+	select {
+	case <-s.closeDone:
+		remove()
+	default:
+		go func() { <-s.closeDone; remove() }()
+	}
+	return err
+}
+
+// WithTerminalCapabilities 由宿主显式声明编辑器终端的实际执行环境。
+func WithTerminalCapabilities(caps env.Capabilities) Option {
+	return func(s *Server) { copy := caps; s.terminalCaps = &copy }
 }

@@ -2,6 +2,7 @@ package acp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -11,7 +12,7 @@ import (
 )
 
 // Prompt 执行一轮对话。被取消（session/cancel、session/close、同会话的新 prompt、连接断开）时返回 cancelled 而非错误，这是协议要求。
-func (c *conn) Prompt(ctx context.Context, p acpsdk.PromptRequest) (acpsdk.PromptResponse, error) {
+func (c *conn) Prompt(ctx context.Context, p acpsdk.PromptRequest) (response acpsdk.PromptResponse, err error) {
 	s, err := c.session(p.SessionId)
 	if err != nil {
 		return acpsdk.PromptResponse{}, err
@@ -22,16 +23,35 @@ func (c *conn) Prompt(ctx context.Context, p acpsdk.PromptRequest) (acpsdk.Promp
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	defer context.AfterFunc(c.base, cancel)()
+	defer context.AfterFunc(s.root, cancel)()
 	gen, ok := s.startTurn(cancel)
 	if !ok {
 		return acpsdk.PromptResponse{}, missing(p.SessionId)
 	}
 	defer s.leaveTurn(gen)
 
-	s.run.Lock()
-	defer s.run.Unlock()
+	select {
+	case s.run <- struct{}{}:
+	case <-ctx.Done():
+		return acpsdk.PromptResponse{StopReason: acpsdk.StopReasonCancelled}, nil
+	}
+	releaseExecution := true
+	defer func() {
+		if releaseExecution {
+			<-s.run
+		}
+	}()
 	defer s.endTurn(ctx)
+	defer func() {
+		saveCtx, stop := cleanupCtx(ctx)
+		defer stop()
+		if saveErr := s.persistMetadata(saveCtx); saveErr != nil {
+			s.recordFailure(saveErr)
+			if response.StopReason != acpsdk.StopReasonCancelled {
+				err = internalError("保存会话元数据", errors.Join(err, saveErr))
+			}
+		}
+	}()
 	cancelled := acpsdk.PromptResponse{StopReason: acpsdk.StopReasonCancelled}
 	if ctx.Err() != nil {
 		return cancelled, nil
@@ -50,12 +70,46 @@ func (c *conn) Prompt(ctx context.Context, p acpsdk.PromptRequest) (acpsdk.Promp
 	ob := newOutbox()
 	s.loop.Store(ob)
 	defer func() {
-		s.loop.Store(nil)
-		close(ob.done)
+		cancel()
+		// 执行终态不代表生产者已经退出，关闭资源前仍须等通道关闭。
+		drain := func(wait context.Context) bool {
+			for {
+				select {
+				case _, ok := <-events:
+					if !ok {
+						return true
+					}
+				case m := <-ob.reqs:
+					m.res <- s.send(m.ctx, m.u)
+				case <-wait.Done():
+					return false
+				}
+			}
+		}
+		finish := func() { s.loop.CompareAndSwap(ob, nil); close(ob.done) }
+		wait, stop := cleanupCtx(ctx)
+		defer stop()
+		if drain(wait) {
+			finish()
+			return
+		}
+		s.recordFailure(wait.Err())
+		if response.StopReason != acpsdk.StopReasonCancelled {
+			err = internalError("等待执行生产者退出", wait.Err())
+		}
+		s.turnMu.Lock()
+		s.closed = true
+		s.turnMu.Unlock()
+		releaseExecution = false
+		go func() { drain(context.Background()); finish(); <-s.run }()
+		go func() { _ = s.close() }()
 	}()
+	var sent strings.Builder
 	for {
 		var ev builder.AgentEvent
 		select {
+		case <-ctx.Done():
+			return cancelled, nil
 		case m := <-ob.reqs:
 			m.res <- s.send(m.ctx, m.u)
 			continue
@@ -68,6 +122,9 @@ func (c *conn) Prompt(ctx context.Context, p acpsdk.PromptRequest) (acpsdk.Promp
 			}
 			ev = e
 		}
+		if ctx.Err() != nil {
+			return cancelled, nil
+		}
 		switch ev.Type {
 		case "text":
 			if ev.Delta == "" {
@@ -76,6 +133,7 @@ func (c *conn) Prompt(ctx context.Context, p acpsdk.PromptRequest) (acpsdk.Promp
 			if err := s.send(ctx, acpsdk.UpdateAgentMessageText(ev.Delta)); err != nil && ctx.Err() == nil {
 				return acpsdk.PromptResponse{}, internalError("发送回答", err)
 			}
+			sent.WriteString(ev.Delta)
 		case "error":
 			if ctx.Err() != nil {
 				return cancelled, nil
@@ -86,6 +144,23 @@ func (c *conn) Prompt(ctx context.Context, p acpsdk.PromptRequest) (acpsdk.Promp
 			}
 			return acpsdk.PromptResponse{}, internalError("执行 Agent", cause)
 		case "done":
+			if ev.Output != nil {
+				final, err := finalText(ev.Output.Result)
+				if err != nil {
+					return acpsdk.PromptResponse{}, internalError("编码最终答案", err)
+				}
+				if suffix := answerSuffix(sent.String(), final); suffix != "" {
+					if err := s.send(ctx, acpsdk.UpdateAgentMessageText(suffix)); err != nil {
+						if ctx.Err() != nil {
+							return cancelled, nil
+						}
+						return acpsdk.PromptResponse{}, internalError("发送最终答案", err)
+					}
+				}
+			}
+			if ctx.Err() != nil {
+				return cancelled, nil
+			}
 			return acpsdk.PromptResponse{StopReason: acpsdk.StopReasonEndTurn}, nil
 		}
 	}
@@ -111,4 +186,25 @@ func promptText(blocks []acpsdk.ContentBlock) (string, error) {
 		}
 	}
 	return b.String(), nil
+}
+
+func finalText(result any) (string, error) {
+	if result == nil {
+		return "", nil
+	}
+	if text, ok := result.(string); ok {
+		return text, nil
+	}
+	data, err := json.Marshal(result)
+	return string(data), err
+}
+
+func answerSuffix(sent, final string) string {
+	if final == "" || strings.HasSuffix(sent, final) {
+		return ""
+	}
+	if strings.HasPrefix(final, sent) {
+		return strings.TrimPrefix(final, sent)
+	}
+	return "\n\n最终答复：\n" + final
 }

@@ -1,0 +1,89 @@
+2026/10/31 20:51:59 INFO connection closed cause="peer connection closed"
+2026/10/31 20:51:59 INFO connection closed cause="peer connection closed"
+2026/10/31 20:51:59 INFO connection closed cause="peer connection closed"
+2026/10/31 20:51:59 INFO connection closed cause="peer connection closed"
+2026/10/31 20:51:59 INFO connection closed cause="peer connection closed"
+2026/10/31 20:51:59 INFO connection closed cause="peer connection closed"
+2026/10/31 20:51:59 INFO connection closed cause="peer connection closed"
+2026/10/31 20:51:59 INFO connection closed cause="peer connection closed"
+2026/10/31 20:51:59 INFO connection closed cause="peer connection closed"
+2026/10/31 20:51:59 INFO connection closed cause="peer connection closed"
+2026/10/31 20:51:59 INFO connection closed cause="peer connection closed"
+2026/10/31 20:51:59 INFO connection closed cause="peer connection closed"
+--- FAIL: TestFinalAnswerContract (0.02s)
+    --- FAIL: TestFinalAnswerContract/仅终态 (0.00s)
+        answer_contract_test.go:33: 
+            	Error Trace:	/Users/costalong/code/go/src/github.com/kart/goagent-contrib/acp/answer_contract_test.go:33
+            	Error:      	Not equal: 
+            	            	expected: "缓存答案"
+            	            	actual  : ""
+            	            	
+            	            	Diff:
+            	            	--- Expected
+            	            	+++ Actual
+            	            	@@ -1 +1 @@
+            	            	-缓存答案
+            	            	+
+            	Test:       	TestFinalAnswerContract/仅终态
+    --- FAIL: TestFinalAnswerContract/补后缀 (0.00s)
+        answer_contract_test.go:33: 
+            	Error Trace:	/Users/costalong/code/go/src/github.com/kart/goagent-contrib/acp/answer_contract_test.go:33
+            	Error:      	Not equal: 
+            	            	expected: "你好"
+            	            	actual  : "你"
+            	            	
+            	            	Diff:
+            	            	--- Expected
+            	            	+++ Actual
+            	            	@@ -1 +1 @@
+            	            	-你好
+            	            	+你
+            	Test:       	TestFinalAnswerContract/补后缀
+    --- FAIL: TestFinalAnswerContract/改写 (0.00s)
+        answer_contract_test.go:33: 
+            	Error Trace:	/Users/costalong/code/go/src/github.com/kart/goagent-contrib/acp/answer_contract_test.go:33
+            	Error:      	Not equal: 
+            	            	expected: "草稿\n\n最终答复：\n定稿"
+            	            	actual  : "草稿"
+            	            	
+            	            	Diff:
+            	            	--- Expected
+            	            	+++ Actual
+            	            	@@ -1,4 +1 @@
+            	            	 草稿
+            	            	-
+            	            	-最终答复：
+            	            	-定稿
+            	Test:       	TestFinalAnswerContract/改写
+    --- FAIL: TestFinalAnswerContract/结构化 (0.00s)
+        answer_contract_test.go:33: 
+            	Error Trace:	/Users/costalong/code/go/src/github.com/kart/goagent-contrib/acp/answer_contract_test.go:33
+            	Error:      	Not equal: 
+            	            	expected: "{\"ok\":true}"
+            	            	actual  : ""
+            	            	
+            	            	Diff:
+            	            	--- Expected
+            	            	+++ Actual
+            	            	@@ -1 +1 @@
+            	            	-{"ok":true}
+            	            	+
+            	Test:       	TestFinalAnswerContract/结构化
+2026/10/31 20:51:59 INFO connection closed cause="peer connection closed"
+2026/10/31 20:51:59 INFO connection closed cause="peer connection closed"
+2026/10/31 20:51:59 INFO connection closed cause="peer connection closed"
+2026/10/31 20:51:59 INFO connection closed cause="peer connection closed"
+--- FAIL: TestFSUnsupportedBeforeSideEffects (0.00s)
+    --- FAIL: TestFSUnsupportedBeforeSideEffects/权限 (0.00s)
+        fs_contract_test.go:18: 
+            	Error Trace:	/Users/costalong/code/go/src/github.com/kart/goagent-contrib/acp/fs_contract_test.go:18
+            	Error:      	Expected error with "unsupported operation" in chain but got nil.
+            	Test:       	TestFSUnsupportedBeforeSideEffects/权限
+    --- FAIL: TestFSUnsupportedBeforeSideEffects/二进制 (0.00s)
+        fs_contract_test.go:18: 
+            	Error Trace:	/Users/costalong/code/go/src/github.com/kart/goagent-contrib/acp/fs_contract_test.go:18
+            	Error:      	Expected error with "unsupported operation" in chain but got nil.
+            	Test:       	TestFSUnsupportedBeforeSideEffects/二进制
+FAIL
+FAIL	github.com/kart-io/goagent-contrib/acp	0.515s
+FAIL

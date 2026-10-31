@@ -1,0 +1,16 @@
+2026/10/31 21:12:21 INFO connection closed cause="peer connection closed"
+2026/10/31 21:12:21 INFO connection closed cause="peer connection closed"
+--- FAIL: TestLiveClientCanReloadCurrentSession (0.01s)
+    live_reload_test.go:21: 
+        	Error Trace:	/Users/costalong/code/go/src/github.com/kart/goagent-contrib/acp/live_reload_test.go:21
+        	Error:      	Received unexpected error:
+        	            	{"code":-32602,"message":"Invalid params","data":{"error":"acp: 会话 \"sess_32bf2e09-6d20-41a5-88af-ec3100fff0fb\" 已打开，须先 session/close"}}
+        	Test:       	TestLiveClientCanReloadCurrentSession
+        	Messages:   	ACP 客户端可直接重载已存在的会话
+2026/10/31 21:12:24 INFO connection closed cause="peer connection closed"
+2026/10/31 21:12:24 INFO connection closed cause="peer connection closed"
+--- FAIL: TestReloadWaitsForOldResourcesBeforeFactory (3.00s)
+    live_reload_test.go:51: 等待旧会话资源释放超时
+FAIL
+FAIL	github.com/kart-io/goagent-contrib/acp	3.578s
+FAIL

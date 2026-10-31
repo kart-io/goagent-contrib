@@ -1,0 +1,23 @@
+== ./acp
+ok  	github.com/kart-io/goagent-contrib/acp	12.932s
+== ./document
+go: downloading github.com/kart-io/goagent v0.26.0
+go: downloading github.com/kart-io/goagent-contrib/retrieval v0.1.0
+ok  	github.com/kart-io/goagent-contrib/document	3.490s
+== ./document/pdf
+go: downloading github.com/kart-io/goagent-contrib/document v0.1.0
+ok  	github.com/kart-io/goagent-contrib/document/pdf	1.721s
+== ./durable/pgstore
+ok  	github.com/kart-io/goagent-contrib/durable/pgstore	1.532s
+== ./retrieval/cohere
+ok  	github.com/kart-io/goagent-contrib/retrieval/cohere	1.446s
+== ./retrieval
+ok  	github.com/kart-io/goagent-contrib/retrieval	2.479s
+== ./retrieval/qdrant
+ok  	github.com/kart-io/goagent-contrib/retrieval/qdrant	1.520s
+== ./retrieval/vertexai
+ok  	github.com/kart-io/goagent-contrib/retrieval/vertexai	1.575s
+== ./tools/database
+ok  	github.com/kart-io/goagent-contrib/tools/database	1.535s
+== ./tools/practical
+ok  	github.com/kart-io/goagent-contrib/tools/practical	13.381s

@@ -1,0 +1,17 @@
+--- FAIL: TestExecReleaseErrorIsVisible (0.00s)
+    exec_contract_test.go:17: 
+        	Error Trace:	/Users/costalong/code/go/src/github.com/kart/goagent-contrib/acp/exec_contract_test.go:17
+        	Error:      	An error is expected but got nil.
+        	Test:       	TestExecReleaseErrorIsVisible
+2026/10/31 20:55:20 INFO connection closed cause="peer connection closed"
+2026/10/31 20:55:20 INFO connection closed cause="peer connection closed"
+--- FAIL: TestExecMissingExitIsNotSuccess (0.00s)
+    exec_contract_test.go:24: 
+        	Error Trace:	/Users/costalong/code/go/src/github.com/kart/goagent-contrib/acp/exec_contract_test.go:24
+        	Error:      	An error is expected but got nil.
+        	Test:       	TestExecMissingExitIsNotSuccess
+2026/10/31 20:55:20 INFO connection closed cause="peer connection closed"
+2026/10/31 20:55:20 INFO connection closed cause="peer connection closed"
+FAIL
+FAIL	github.com/kart-io/goagent-contrib/acp	0.516s
+FAIL

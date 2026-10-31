@@ -144,7 +144,9 @@ func (s *Session) fail(ctx context.Context, callID, text string) {
 func (s *Session) settle(ctx context.Context, u acpsdk.SessionUpdate) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), endTurnTimeout)
 	defer cancel()
-	return s.update(ctx, u)
+	err := s.update(ctx, u)
+	s.recordFailure(err)
+	return err
 }
 
 // endTurn 为本轮已发出 tool_call 但未结束的调用补发 failed（准入阶段出错、终止或取消时 Around 与 Post 都不运行）。

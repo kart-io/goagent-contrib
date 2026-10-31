@@ -1,0 +1,21 @@
+2026/10/31 21:00:03 INFO connection closed cause="io: read/write on closed pipe"
+--- FAIL: TestFailedTerminalNotificationSurvivesClose (0.00s)
+    notification_contract_test.go:26: 
+        	Error Trace:	/Users/costalong/code/go/src/github.com/kart/goagent-contrib/acp/notification_contract_test.go:26
+        	Error:      	An error is expected but got nil.
+        	Test:       	TestFailedTerminalNotificationSurvivesClose
+        	Messages:   	终态发送失败必须反映在关闭结果
+2026/10/31 21:00:03 INFO connection closed cause="peer connection closed"
+2026/10/31 21:00:03 INFO connection closed cause="peer connection closed"
+--- FAIL: TestRollbackKeepsIDReservedUntilCleanupFinishes (0.06s)
+    resource_contract_test.go:150: 
+        	Error Trace:	/Users/costalong/code/go/src/github.com/kart/goagent-contrib/acp/harness_test.go:238
+        	            				/Users/costalong/code/go/src/github.com/kart/goagent-contrib/acp/resource_contract_test.go:150
+        	Error:      	Not equal: 
+        	            	expected: -32602
+        	            	actual  : -32603
+        	Test:       	TestRollbackKeepsIDReservedUntilCleanupFinishes
+        	Messages:   	{"code":-32603,"message":"Internal error","data":{"error":"acp: 回放会话：事件 1：json: cannot unmarshal string into Go value of type session.MessageData"}}
+FAIL
+FAIL	github.com/kart-io/goagent-contrib/acp	0.557s
+FAIL

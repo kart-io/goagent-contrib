@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"unicode/utf8"
 
 	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/kart-io/goagent/harness/env"
@@ -16,7 +17,7 @@ import (
 
 // clientFS 把读写转发给编辑器，使 Agent 读到未保存的缓冲区、写入出现在编辑器中；
 // 路径限定与 ACP 没有的操作（Stat、Walk、Remove）沿用工作区的 LocalFS。
-// 编辑器不参与写入协调，条件写入的检查与写入之间的修改无法发现。
+// 同 Server 内转发写入与删除串行协调；编辑器手工改动、其他 Server 与绕过本接口的写者不参与。
 // 仅在客户端同时支持读与写时使用：只转发一侧会让版本比对与磁盘、缓冲区错位。
 type clientFS struct{ s *Session }
 
@@ -28,7 +29,24 @@ func (f *clientFS) Stat(ctx context.Context, path string) (env.Info, error) {
 	return f.s.local.Stat(ctx, path)
 }
 
-func (f *clientFS) Remove(ctx context.Context, path string) error { return f.s.local.Remove(ctx, path) }
+func (f *clientFS) Remove(ctx context.Context, path string) error {
+	unlock, err := f.lockWrite(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return f.s.local.Remove(ctx, path)
+}
+
+func (f *clientFS) lockWrite(ctx context.Context) (func(), error) {
+	gate := f.s.conn.srv.fileWrites
+	select {
+	case gate <- struct{}{}:
+		return func() { <-gate }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
 
 func (f *clientFS) Walk(ctx context.Context, path string, fn func(env.Info) error) error {
 	return f.s.local.Walk(ctx, path, fn)
@@ -65,6 +83,14 @@ func (f *clientFS) ReadFile(ctx context.Context, path string) ([]byte, env.Versi
 }
 
 func (f *clientFS) WriteFile(ctx context.Context, path string, data []byte, intent env.WriteIntent) (env.Version, error) {
+	if intent.Perm != 0 || !utf8.Valid(data) {
+		return "", fmt.Errorf("acp: 编辑器仅支持 UTF-8 文本及默认权限：%w", errors.ErrUnsupported)
+	}
+	unlock, err := f.lockWrite(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
 	abs, err := f.abs(path)
 	if err != nil {
 		return "", err
@@ -94,7 +120,7 @@ func (f *clientFS) WriteFile(ctx context.Context, path string, data []byte, inte
 	default:
 		return "", err
 	}
-	// ACP 未规定编辑器是否创建父目录，与 LocalFS 一致由这里按需创建；Perm 无法经 ACP 传递，不转发。
+	// ACP 未规定编辑器是否创建父目录，由这里按需创建；非默认权限已在入口拒绝。
 	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 		return "", err
 	}

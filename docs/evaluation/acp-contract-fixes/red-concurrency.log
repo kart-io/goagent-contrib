@@ -1,0 +1,10 @@
+--- FAIL: TestFSConcurrentConditionalWrite (0.00s)
+    fs_contract_test.go:78: 
+        	Error Trace:	/Users/costalong/code/go/src/github.com/kart/goagent-contrib/acp/fs_contract_test.go:78
+        	Error:      	Expected error with "file changed since it was read" in chain but got nil.
+        	Test:       	TestFSConcurrentConditionalWrite
+2026/10/31 20:53:33 INFO connection closed cause="peer connection closed"
+2026/10/31 20:53:33 INFO connection closed cause="peer connection closed"
+FAIL
+FAIL	github.com/kart-io/goagent-contrib/acp	0.489s
+FAIL

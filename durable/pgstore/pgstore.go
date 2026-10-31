@@ -1,4 +1,4 @@
-// Package pgstore 是基于 Postgres 的 durable.Store 与 durable.Scoped 实现，供多个实例共享持久运行。
+// Package pgstore 是基于 Postgres 的 durable.Store、durable.Scoped 与 session.Store（SessionStore）实现，供多个实例共享持久运行与会话日志。
 //
 // 锁实现为带过期时间的租约：后台批量续约，持有者崩溃后租约在 LeaseTTL 后过期，其他实例即可接管。
 // 每次写入在同一事务内校验租约令牌，被接管后的旧持有者写入返回 durable.ErrLeaseLost。
@@ -9,7 +9,7 @@
 //   - 高可用部署须同步复制并隔离旧主；Save 与 RemoveScope 的墓碑事务会 SET LOCAL synchronous_commit = on。
 //     租约的获取、续约与删除不强制同步：切换中丢失只会让某个持有者的写入因令牌不符被拒，不会出现两个可写的持有者。
 //   - LeaseTTL 须大于一次主备切换的时长。
-//   - 表结构见 Schema，由宿主建表。
+//   - 表结构见 Schema，由宿主建表；使用 SessionStore 时另建 SessionSchema。
 package pgstore
 
 import (

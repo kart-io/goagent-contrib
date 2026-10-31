@@ -49,7 +49,7 @@ func newSchema(t *testing.T) (dsn, schema string) {
 	_, err = admin.Exec(ctx, `CREATE SCHEMA `+schema)
 	require.NoError(t, err)
 	pool := newPool(t, dsn, schema)
-	for _, stmt := range strings.Split(Schema, ";") {
+	for _, stmt := range strings.Split(Schema+SessionSchema, ";") {
 		if strings.TrimSpace(stmt) != "" {
 			_, err = pool.Exec(ctx, stmt)
 			require.NoError(t, err)

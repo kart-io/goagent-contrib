@@ -86,7 +86,7 @@ func (p *wsPeer) releaseFrame(f wsFrame) {
 }
 func (p *wsPeer) writer(done chan<- struct{}) {
 	defer close(done)
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 	ping := time.NewTicker(p.h.cfg.PingInterval)
 	defer ping.Stop()
 	for {

@@ -49,6 +49,8 @@ github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.2 h1:8Tjv8EJ+pM1xP8mK6egEbD1OgnV
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.2/go.mod h1:pkJQ2tZHJ0aFOVEEot6oZmaVEZcRme73eIFmhiVuRWs=
 github.com/kart-io/goagent v0.32.1 h1:wTMdPW1JYwXluLr2lbhzUSRTeStslpBZNxhn60N3+yo=
 github.com/kart-io/goagent v0.32.1/go.mod h1:+tp4/uNhdMeTlYv5qMP+nwYAdTofnnSuOixyqR1Qxa8=
+github.com/kart-io/goagent v0.32.2 h1:fGbXAqi4gQx84nyZ7DzNEGsM/0RvkX6OqpeweM/olg8=
+github.com/kart-io/goagent v0.32.2/go.mod h1:+tp4/uNhdMeTlYv5qMP+nwYAdTofnnSuOixyqR1Qxa8=
 github.com/kart-io/logger v0.2.2 h1:YLTNkqR4nL5z1nvPbmSfhY3WvodVIYwFoml+JWgvNl8=
 github.com/kart-io/logger v0.2.2/go.mod h1:FslDvmiuObMHG/DRSpqT+gYJrviu4ieEW7ytRyj0Ack=
 github.com/klauspost/cpuid/v2 v2.2.9 h1:66ze0taIn2H33fBvCkXuv9BmCwDfafmiIVpKV9kKGuY=

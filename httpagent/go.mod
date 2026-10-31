@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
-	github.com/kart-io/goagent v0.32.1
+	github.com/kart-io/goagent v0.32.2
 	github.com/stretchr/testify v1.11.1
 )
 

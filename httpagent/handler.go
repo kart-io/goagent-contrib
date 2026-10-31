@@ -74,12 +74,12 @@ func New(cfg Config) (*Handler, error) {
 		cfg.WSQueueBytes = 4 << 20
 	}
 	if cfg.PongTimeout <= cfg.PingInterval {
-		return nil, errors.New("Pong 等待须大于 Ping 间隔")
+		return nil, errors.New("pong 等待须大于 Ping 间隔")
 	}
 	receivers := make(map[string]Receiver, len(cfg.Receivers))
 	for name, receiver := range cfg.Receivers {
 		if name == "" || strings.Contains(name, "/") || receiver.Decode == nil || (receiver.Mode != "inline" && receiver.Mode != "queued") || (receiver.Mode == "queued" && receiver.Acceptor == nil) {
-			return nil, errors.New("Webhook 接收器必须明确配置模式、解码器与持久接纳器")
+			return nil, errors.New("webhook 接收器必须明确配置模式、解码器与持久接纳器")
 		}
 		if receiver.AcceptStatus != 0 && receiver.AcceptStatus != 200 && receiver.AcceptStatus != 202 {
 			return nil, errors.New("接纳应答状态仅支持200或202")

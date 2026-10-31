@@ -65,7 +65,7 @@ type Sender struct {
 
 func NewSender(cfg SenderConfig) (*Sender, error) {
 	if cfg.Timeout < 0 {
-		return nil, errors.New("Webhook 超时不能为负数")
+		return nil, errors.New("webhook 超时不能为负数")
 	}
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 5 * time.Second
@@ -79,7 +79,7 @@ func NewSender(cfg SenderConfig) (*Sender, error) {
 	for _, target := range cfg.Targets {
 		u, err := url.Parse(target.URL)
 		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil {
-			return nil, errors.New("Webhook 目标必须是有效 HTTP URL")
+			return nil, errors.New("webhook 目标必须是有效 HTTP URL")
 		}
 		target.Headers = target.Headers.Clone()
 		target.Events = append([]string(nil), target.Events...)
@@ -129,7 +129,7 @@ func (s *Sender) Deliver(ctx context.Context, e RunEvent) error {
 			_, readErr := io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 			closeErr := resp.Body.Close()
 			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-				errs = append(errs, fmt.Errorf("Webhook 响应状态 %d", resp.StatusCode))
+				errs = append(errs, fmt.Errorf("webhook 响应状态 %d", resp.StatusCode))
 			}
 			errs = append(errs, readErr, closeErr)
 		}()

@@ -34,6 +34,10 @@ func (c *scope) Save(ctx context.Context, id string, snap *durable.Snapshot) err
 	return c.root.save(ctx, c.ns, id, snap)
 }
 
+func (c *scope) SaveAll(ctx context.Context, writes ...durable.Write) error {
+	return c.root.saveAll(ctx, c.ns, writes)
+}
+
 // RemoveScope 实现 durable.Scoped，分两段：先在排他锁内提交墓碑（墓碑已存在时不刷新时间），
 // 墓碑生效后数据即不可读、写入被拒；再分批删除快照与租约。中途失败时重复调用可续删。不等待进行中的持锁者。
 func (s *Store) RemoveScope(ctx context.Context, name string) error {

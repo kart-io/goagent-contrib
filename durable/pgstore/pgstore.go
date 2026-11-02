@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"os"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -159,6 +161,11 @@ func (s *Store) Load(ctx context.Context, id string) (*durable.Snapshot, error) 
 // Save 实现 durable.Store。
 func (s *Store) Save(ctx context.Context, id string, snap *durable.Snapshot) error {
 	return s.save(ctx, "", id, snap)
+}
+
+// SaveAll 实现 durable.Store。
+func (s *Store) SaveAll(ctx context.Context, writes ...durable.Write) error {
+	return s.saveAll(ctx, "", writes)
 }
 
 func (s *Store) enterGate(k string) *gate {
@@ -340,16 +347,36 @@ func (s *Store) load(ctx context.Context, ns, id string) (*durable.Snapshot, err
 }
 
 func (s *Store) save(ctx context.Context, ns, id string, snap *durable.Snapshot) error {
-	s.mu.Lock()
-	h := s.owners[key(ns, id)]
-	s.mu.Unlock()
-	if h == nil {
-		return fmt.Errorf("%w：本进程未持有 %q 的锁", durable.ErrLeaseLost, id)
-	}
-	data, err := json.Marshal(snap)
-	if err != nil {
+	return s.saveAll(ctx, ns, []durable.Write{{ID: id, Snapshot: snap}})
+}
+
+// saveAll 在一个事务内写入全部快照并校验每个 ID 的租约。按 ID 排序写入，避免并发批量写入互相等待行锁。
+func (s *Store) saveAll(ctx context.Context, ns string, writes []durable.Write) error {
+	if err := durable.ValidateWrites(writes); err != nil {
 		return err
 	}
+	if len(writes) == 0 {
+		return nil
+	}
+	type row struct {
+		id, token string
+		data      []byte
+	}
+	rows := make([]row, len(writes))
+	for i, write := range writes {
+		s.mu.Lock()
+		h := s.owners[key(ns, write.ID)]
+		s.mu.Unlock()
+		if h == nil {
+			return fmt.Errorf("%w：本进程未持有 %q 的锁", durable.ErrLeaseLost, write.ID)
+		}
+		data, err := json.Marshal(write.Snapshot)
+		if err != nil {
+			return err
+		}
+		rows[i] = row{id: write.ID, token: h.token, data: data}
+	}
+	slices.SortFunc(rows, func(a, b row) int { return strings.Compare(a.id, b.id) })
 	return pgx.BeginFunc(ctx, s.cfg.Pool, func(tx pgx.Tx) error {
 		ms := fmt.Sprint(s.cfg.OpTimeout.Milliseconds())
 		if _, err := tx.Exec(ctx, `SELECT set_config('synchronous_commit', 'on', true), set_config('lock_timeout', $1, true), set_config('statement_timeout', $1, true)`, ms); err != nil {
@@ -358,20 +385,22 @@ func (s *Store) save(ctx context.Context, ns, id string, snap *durable.Snapshot)
 		if err := checkScope(ctx, tx, ns); err != nil {
 			return err
 		}
-		// 只校验令牌：接管必然改写令牌，过期但未被接管时写入是安全的；UPDATE 持有租约行锁直到提交，同时顺带续约。
-		tag, err := tx.Exec(ctx, `WITH l AS (
+		for _, r := range rows {
+			// 只校验令牌：接管必然改写令牌，过期但未被接管时写入是安全的；UPDATE 持有租约行锁直到提交，同时顺带续约。
+			tag, err := tx.Exec(ctx, `WITH l AS (
   UPDATE goagent_durable_lease SET expires_at = now() + $5 * interval '1 millisecond'
   WHERE ns = $1 AND id = $2 AND token = $3 RETURNING 1
 )
 INSERT INTO goagent_durable_snapshot (ns, id, data, updated_at)
 SELECT $1, $2, $4, now() WHERE EXISTS (SELECT 1 FROM l)
 ON CONFLICT (ns, id) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at`,
-			ns, id, h.token, data, s.cfg.LeaseTTL.Milliseconds())
-		if err != nil {
-			return err
-		}
-		if tag.RowsAffected() == 0 {
-			return fmt.Errorf("%w：%q", durable.ErrLeaseLost, id)
+				ns, r.id, r.token, r.data, s.cfg.LeaseTTL.Milliseconds())
+			if err != nil {
+				return err
+			}
+			if tag.RowsAffected() == 0 {
+				return fmt.Errorf("%w：%q", durable.ErrLeaseLost, r.id)
+			}
 		}
 		return nil
 	})

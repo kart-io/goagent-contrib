@@ -200,18 +200,18 @@ Retrieved Documents ({num_docs}):
 func (r *RAGRetriever) formatDocument(doc *interfaces.Document, index int) string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("Document %d:\n", index))
+	fmt.Fprintf(&sb, "Document %d:\n", index)
 	sb.WriteString(doc.PageContent)
 
 	if r.includeMetadata && len(doc.Metadata) > 0 {
 		sb.WriteString("\nMetadata:\n")
 		for key, value := range doc.Metadata {
-			sb.WriteString(fmt.Sprintf("  %s: %v\n", key, value))
+			fmt.Fprintf(&sb, "  %s: %v\n", key, value)
 		}
 	}
 
 	if doc.Score > 0 {
-		sb.WriteString(fmt.Sprintf("Score: %.4f\n", doc.Score))
+		fmt.Fprintf(&sb, "Score: %.4f\n", doc.Score)
 	}
 
 	return sb.String()

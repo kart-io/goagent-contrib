@@ -42,7 +42,7 @@ defer store.Close(ctx)
 
 ```bash
 ./scripts/test-all.sh   # 对全部模块运行 go vet 与 go test -race（不连接外部服务）
-./scripts/lint-all.sh   # 对全部模块运行 golangci-lint（与 CI 相同，v2.6.2，Go 1.25）
+./scripts/lint-all.sh   # 对全部模块运行 golangci-lint（与 CI 相同，v2.15.0，Go 1.26）
 ```
 
 pgstore 的 Postgres 测试：
@@ -53,7 +53,7 @@ pgstore 的 Postgres 测试：
 
 也可以指定已有数据库：`GOAGENT_PGSTORE_DSN=postgres://... go test ./...`（在 `durable/pgstore` 目录下）；未设置时 Postgres 测试被跳过。
 
-CI 对每个模块在 Go 1.25 下运行 vet、`go test -race` 与 golangci-lint，pgstore 连接服务容器中的 Postgres；数据库重启与同步提交测试需要专用容器，只在本地 `test-pgstore.sh` 中运行。
+CI 对每个模块在 Go 1.26 下运行 vet、`go test -race` 与 golangci-lint，pgstore 连接服务容器中的 Postgres；数据库重启与同步提交测试需要专用容器，只在本地 `test-pgstore.sh` 中运行。
 
 ### 版本
 

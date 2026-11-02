@@ -53,8 +53,8 @@ github.com/gorilla/websocket v1.5.3 h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aN
 github.com/gorilla/websocket v1.5.3/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 h1:/Tnpcb2E0Pz/tN9s3bfEY2Q8ePCEX9iuS+cneUwncnw=
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0/go.mod h1:zOBXOsUaBSjKgmH4OGzV1esUpR3oUSCPYVd2cUBjKYY=
-github.com/kart-io/goagent v0.35.0 h1:kRRhw8nKvfq4HsH8qhYfrVB6fZQeBZsUBkqZTYYSybU=
-github.com/kart-io/goagent v0.35.0/go.mod h1:ufa3DPlQTiRDIM798qcVO9gxxi0yQfG/E8X2SWGk+C8=
+github.com/kart-io/goagent v0.36.0 h1:QwYaarKP53dUKusxTOhNOm6cChR56YrLBE6J0apiFIc=
+github.com/kart-io/goagent v0.36.0/go.mod h1:ufa3DPlQTiRDIM798qcVO9gxxi0yQfG/E8X2SWGk+C8=
 github.com/kart-io/logger v0.2.2 h1:YLTNkqR4nL5z1nvPbmSfhY3WvodVIYwFoml+JWgvNl8=
 github.com/kart-io/logger v0.2.2/go.mod h1:FslDvmiuObMHG/DRSpqT+gYJrviu4ieEW7ytRyj0Ack=
 github.com/klauspost/cpuid/v2 v2.2.9 h1:66ze0taIn2H33fBvCkXuv9BmCwDfafmiIVpKV9kKGuY=

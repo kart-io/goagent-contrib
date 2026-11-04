@@ -16,12 +16,19 @@ type scoringModel struct {
 	calls   int
 }
 
-func (m *scoringModel) Chat(ctx context.Context, messages []llm.Message) (*llm.CompletionResponse, error) {
+func (m *scoringModel) CompleteStream(ctx context.Context, request *llm.CompletionRequest) (<-chan *llm.StreamChunk, error) {
 	m.calls++
-	if len(messages) != 2 {
+	if len(request.Messages) != 2 || request.Messages[0].Role != "system" || request.Messages[1].Role != "user" {
 		return nil, errors.New("expected system and candidate messages")
 	}
-	return &llm.CompletionResponse{Content: m.content}, m.err
+	if m.err != nil {
+		return nil, m.err
+	}
+	out := make(chan *llm.StreamChunk, 2)
+	out <- &llm.StreamChunk{Delta: m.content}
+	out <- &llm.StreamChunk{Done: true, FinishReason: "stop"}
+	close(out)
+	return out, nil
 }
 func TestLLMRerankerUsesModelAndRejectsInvalidScores(t *testing.T) {
 	docs := []*interfaces.Document{{ID: "a", PageContent: "退款", Score: 9}, {ID: "b", PageContent: "运输"}}

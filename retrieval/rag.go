@@ -200,18 +200,18 @@ Retrieved Documents ({num_docs}):
 func (r *RAGRetriever) formatDocument(doc *interfaces.Document, index int) string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("Document %d:\n", index))
+	_, _ = fmt.Fprintf(&sb, "Document %d:\n", index)
 	sb.WriteString(doc.PageContent)
 
 	if r.includeMetadata && len(doc.Metadata) > 0 {
 		sb.WriteString("\nMetadata:\n")
 		for key, value := range doc.Metadata {
-			sb.WriteString(fmt.Sprintf("  %s: %v\n", key, value))
+			_, _ = fmt.Fprintf(&sb, "  %s: %v\n", key, value)
 		}
 	}
 
 	if doc.Score > 0 {
-		sb.WriteString(fmt.Sprintf("Score: %.4f\n", doc.Score))
+		_, _ = fmt.Fprintf(&sb, "Score: %.4f\n", doc.Score)
 	}
 
 	return sb.String()
@@ -278,7 +278,7 @@ func (c *RAGChain) Run(ctx context.Context, query string) (string, error) {
 	}
 
 	// 4. 调用 LLM 生成回答
-	response, err := c.llmClient.Complete(ctx, &llm.CompletionRequest{
+	response, err := llm.Complete(ctx, c.llmClient, &llm.CompletionRequest{
 		Messages: []llm.Message{
 			llm.UserMessage(contextPrompt),
 		},
@@ -399,7 +399,7 @@ Original query: %s
 Please provide only the alternative queries, one per line, without numbering or explanations.`, m.NumQueries, query)
 
 	// 调用 LLM 生成查询
-	response, err := m.LLMClient.Complete(ctx, &llm.CompletionRequest{
+	response, err := llm.Complete(ctx, m.LLMClient, &llm.CompletionRequest{
 		Messages: []llm.Message{
 			llm.UserMessage(prompt),
 		},

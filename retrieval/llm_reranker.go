@@ -53,7 +53,7 @@ func (l *LLMReranker) Rerank(ctx context.Context, query string, docs []*interfac
 	if err != nil {
 		return nil, err
 	}
-	response, err := l.Client.Chat(ctx, []llm.Message{{Role: "system", Content: l.Prompt}, {Role: "user", Content: string(payload)}})
+	response, err := llm.Chat(ctx, l.Client, []llm.Message{{Role: "system", Content: l.Prompt}, {Role: "user", Content: string(payload)}})
 	if err != nil {
 		return nil, fmt.Errorf("rerank model: %w", err)
 	}

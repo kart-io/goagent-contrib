@@ -6,7 +6,7 @@
 //
 // 前置条件：
 //   - Pool 直连主库，不能指向读副本或读写分离代理；经过 pgbouncer 事务模式时须关闭预编译语句缓存。
-//   - 高可用部署须同步复制并隔离旧主；Save 与 RemoveScope 的墓碑事务会 SET LOCAL synchronous_commit = on。
+//   - 高可用部署须同步复制并隔离旧主；Save、SaveAll 与 RemoveScope 的墓碑事务会 SET LOCAL synchronous_commit = on。
 //     租约的获取、续约与删除不强制同步：切换中丢失只会让某个持有者的写入因令牌不符被拒，不会出现两个可写的持有者。
 //   - LeaseTTL 须大于一次主备切换的时长。
 //   - 表结构见 Schema，由宿主建表；使用 SessionStore 时另建 SessionSchema。
@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"os"
+	"sort"
 	"sync"
 	"time"
 
@@ -154,6 +155,11 @@ func (s *Store) Lock(ctx context.Context, id string) (func() error, error) {
 // Load 实现 durable.Store。
 func (s *Store) Load(ctx context.Context, id string) (*durable.Snapshot, error) {
 	return s.load(ctx, "", id)
+}
+
+// SaveAll 在一个同步提交事务中校验全部租约并保存全部快照。
+func (s *Store) SaveAll(ctx context.Context, writes ...durable.Write) error {
+	return s.saveAll(ctx, "", writes)
 }
 
 // Save 实现 durable.Store。
@@ -340,16 +346,36 @@ func (s *Store) load(ctx context.Context, ns, id string) (*durable.Snapshot, err
 }
 
 func (s *Store) save(ctx context.Context, ns, id string, snap *durable.Snapshot) error {
-	s.mu.Lock()
-	h := s.owners[key(ns, id)]
-	s.mu.Unlock()
-	if h == nil {
-		return fmt.Errorf("%w：本进程未持有 %q 的锁", durable.ErrLeaseLost, id)
-	}
-	data, err := json.Marshal(snap)
-	if err != nil {
+	return s.saveAll(ctx, ns, []durable.Write{{ID: id, Snapshot: snap}})
+}
+
+func (s *Store) saveAll(ctx context.Context, ns string, writes []durable.Write) error {
+	if err := durable.ValidateWrites(writes); err != nil {
 		return err
 	}
+	if len(writes) == 0 {
+		return nil
+	}
+	type prepared struct {
+		id, token string
+		data      []byte
+	}
+	items := make([]prepared, len(writes))
+	for i, write := range writes {
+		s.mu.Lock()
+		h := s.owners[key(ns, write.ID)]
+		s.mu.Unlock()
+		if h == nil {
+			return fmt.Errorf("%w：本进程未持有 %q 的锁", durable.ErrLeaseLost, write.ID)
+		}
+		data, err := json.Marshal(write.Snapshot)
+		if err != nil {
+			return err
+		}
+		items[i] = prepared{id: write.ID, token: h.token, data: data}
+	}
+	// 所有批次用相同的行锁顺序，避免相反顺序的批次产生数据库死锁。
+	sort.Slice(items, func(i, j int) bool { return items[i].id < items[j].id })
 	return pgx.BeginFunc(ctx, s.cfg.Pool, func(tx pgx.Tx) error {
 		ms := fmt.Sprint(s.cfg.OpTimeout.Milliseconds())
 		if _, err := tx.Exec(ctx, `SELECT set_config('synchronous_commit', 'on', true), set_config('lock_timeout', $1, true), set_config('statement_timeout', $1, true)`, ms); err != nil {
@@ -358,20 +384,22 @@ func (s *Store) save(ctx context.Context, ns, id string, snap *durable.Snapshot)
 		if err := checkScope(ctx, tx, ns); err != nil {
 			return err
 		}
-		// 只校验令牌：接管必然改写令牌，过期但未被接管时写入是安全的；UPDATE 持有租约行锁直到提交，同时顺带续约。
-		tag, err := tx.Exec(ctx, `WITH l AS (
+		for _, item := range items {
+			// UPDATE 校验令牌并持有租约行锁直到整个批次提交；任一租约失效回滚全部写入。
+			tag, err := tx.Exec(ctx, `WITH l AS (
   UPDATE goagent_durable_lease SET expires_at = now() + $5 * interval '1 millisecond'
   WHERE ns = $1 AND id = $2 AND token = $3 RETURNING 1
 )
 INSERT INTO goagent_durable_snapshot (ns, id, data, updated_at)
 SELECT $1, $2, $4, now() WHERE EXISTS (SELECT 1 FROM l)
 ON CONFLICT (ns, id) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at`,
-			ns, id, h.token, data, s.cfg.LeaseTTL.Milliseconds())
-		if err != nil {
-			return err
-		}
-		if tag.RowsAffected() == 0 {
-			return fmt.Errorf("%w：%q", durable.ErrLeaseLost, id)
+				ns, item.id, item.token, item.data, s.cfg.LeaseTTL.Milliseconds())
+			if err != nil {
+				return err
+			}
+			if tag.RowsAffected() == 0 {
+				return fmt.Errorf("%w：%q", durable.ErrLeaseLost, item.id)
+			}
 		}
 		return nil
 	})

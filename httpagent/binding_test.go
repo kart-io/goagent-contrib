@@ -131,42 +131,31 @@ func probeClient(t *testing.T) *providers.OpenAIProvider {
 	return client
 }
 func TestNativeKeepsPluginToolExecution(t *testing.T) {
-	client := probeClient(t)
-	var invoked atomic.Int32
-	tool := tools.NewBaseTool("probe_tool", "探针工具", `{"type":"object","properties":{}}`, func(context.Context, *interfaces.ToolInput) (*interfaces.ToolOutput, error) {
-		invoked.Add(1)
-		return &interfaces.ToolOutput{Success: true, Result: "工具执行成功"}, nil
-	})
-	host, err := plugin.NewHost(toolPlugin{tool: tool})
-	if err != nil {
-		t.Fatal(err)
+	for _, entry := range []string{"runnable", "native"} {
+		t.Run(entry, func(t *testing.T) {
+			client := probeClient(t)
+			var invoked atomic.Int32
+			tool := tools.NewBaseTool("probe_tool", "探针工具", `{"type":"object","properties":{}}`, func(context.Context, *interfaces.ToolInput) (*interfaces.ToolOutput, error) {
+				invoked.Add(1)
+				return &interfaces.ToolOutput{Success: true, Result: "工具执行成功"}, nil
+			})
+			host, err := plugin.NewHost(toolPlugin{tool: tool})
+			require.NoError(t, err)
+			require.NoError(t, host.Start(context.Background()))
+			t.Cleanup(func() { require.NoError(t, host.Stop(context.Background())) })
+			b := builder.NewSimpleBuilder(client).WithMaxIterations(4)
+			require.NoError(t, plugin.Install(context.Background(), b, host))
+			agent, err := b.Build()
+			require.NoError(t, err)
+			var out *builder.AgentOutput
+			if entry == "runnable" {
+				out, err = agent.AsRunnable().Invoke(context.Background(), "请执行工具")
+			} else {
+				out, err = Native(agent.ExecuteStream).Run(context.Background(), "请执行工具", func(builder.AgentEvent) error { return nil })
+			}
+			require.NoError(t, err)
+			require.Equal(t, int32(1), invoked.Load(), "每个入口应恰好执行一次插件工具")
+			require.Equal(t, "工具结果", out.Result)
+		})
 	}
-	if err = host.Start(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	defer host.Stop(context.Background())
-	b := builder.NewSimpleBuilder(client).WithMaxIterations(4)
-	if err = plugin.Install(context.Background(), b, host); err != nil {
-		t.Fatal(err)
-	}
-	agent, err := b.Build()
-	if err != nil {
-		t.Fatal(err)
-	}
-	out, err := agent.Execute(context.Background(), "请执行工具")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if invoked.Load() != 0 {
-		t.Fatal("同步 Execute 意外执行工具")
-	}
-	t.Logf("Execute: result=%v tool_calls=%d", out.Result, invoked.Load())
-	out, err = Native(agent.ExecuteStream).Run(context.Background(), "请执行工具", func(builder.AgentEvent) error { return nil })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if invoked.Load() != 1 {
-		t.Fatalf("原生执行预期一次工具调用，实际 %d", invoked.Load())
-	}
-	t.Logf("AsRunnable.Invoke: result=%v tool_calls=%d", out.Result, invoked.Load())
 }

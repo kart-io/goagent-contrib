@@ -2,6 +2,10 @@
 # 对仓库中的全部 Go 模块运行 go vet 与 go test -race；需要外部服务的用例在未配置时自动跳过。
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# 同仓库的 retrieval 等模块须使用本轮源码，避免混入尚未迁移的已发布旧版本。
+if [[ "${GOAGENT_CONTRIB_WORKSPACE:-}" != "1" ]]; then
+  exec env GOAGENT_CONTRIB_WORKSPACE=1 bash scripts/with-local-modules.sh bash "scripts/test-all.sh" "$@"
+fi
 status=0
 while IFS= read -r mod; do
   dir=$(dirname "$mod")

@@ -23,11 +23,13 @@ func (*contractVector) SimilaritySearch(context.Context, string, int) ([]*interf
 
 type contractModel struct{}
 
-func (*contractModel) Complete(context.Context, *llm.CompletionRequest) (*llm.CompletionResponse, error) {
-	return &llm.CompletionResponse{Content: "refund"}, nil
-}
-func (m *contractModel) Chat(ctx context.Context, msgs []llm.Message) (*llm.CompletionResponse, error) {
-	return m.Complete(ctx, &llm.CompletionRequest{Messages: msgs})
+func (*contractModel) CompleteStream(context.Context, *llm.CompletionRequest) (<-chan *llm.StreamChunk, error) {
+	out := make(chan *llm.StreamChunk, 3)
+	out <- &llm.StreamChunk{Delta: "re"}
+	out <- &llm.StreamChunk{Delta: "fund"}
+	out <- &llm.StreamChunk{Done: true, FinishReason: "stop"}
+	close(out)
+	return out, nil
 }
 func (*contractModel) Provider() constants.Provider { return constants.ProviderCustom }
 func (*contractModel) IsAvailable() bool            { return true }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -108,72 +109,115 @@ func conflict(expected, cur int64) error {
 	return fmt.Errorf("%w：期望序号 %d，当前 %d", session.ErrConflict, expected, cur)
 }
 
-// Append 实现 session.Store。会话行的条件更新持有行锁到提交，并发追加按期望序号串行判定。
-// 事件按原样的 JSON 存为 bytea：jsonb 会改写 Data 的键序与数字写法。
+// Append 实现 session.Store，与 AppendAll 共用事务与租约校验。
 func (s *SessionStore) Append(ctx context.Context, id string, expected int64, events ...session.Event) (int64, error) {
-	if err := validSessionID(id); err != nil {
-		return 0, err
-	}
-	if len(events) == 0 {
-		cur, err := lastSeq(ctx, s.root.cfg.Pool, id)
-		if err == nil && cur != expected {
-			err = conflict(expected, cur)
-		}
-		return cur, err
-	}
-	holds, err := s.fences(id, events)
+	lasts, err := s.AppendAll(ctx, session.AppendBatch{ID: id, Expected: expected, Events: events})
 	if err != nil {
 		return 0, err
 	}
-	now := time.Now().UTC()
-	seqs, types, data := make([]int64, len(events)), make([]string, len(events)), make([][]byte, len(events))
-	for i, ev := range events {
-		ev.Seq = expected + int64(i) + 1
-		if ev.Time.IsZero() {
-			ev.Time = now
-		}
-		seqs[i], types[i] = ev.Seq, ev.Type
-		if data[i], err = json.Marshal(ev); err != nil {
-			return 0, err
-		}
+	return lasts[0], nil
+}
+
+// AppendAll 在一个同步提交事务内比较全部序号并追加事件。
+// 事件按原样的 JSON 存为 bytea：jsonb 会改写 Data 的键序与数字写法。
+func (s *SessionStore) AppendAll(ctx context.Context, batches ...session.AppendBatch) ([]int64, error) {
+	if err := session.ValidateBatches(batches); err != nil {
+		return nil, err
 	}
-	last := expected + int64(len(events))
-	err = s.writeTx(ctx, func(tx pgx.Tx) error {
+	lasts := make([]int64, len(batches))
+	if len(batches) == 0 {
+		return lasts, nil
+	}
+	type prepared struct {
+		batch session.AppendBatch
+		seqs  []int64
+		types []string
+		data  [][]byte
+	}
+	items := make([]prepared, len(batches))
+	var holds []*hold
+	now := time.Now().UTC()
+	for i, batch := range batches {
+		fences, err := s.fences(batch.ID, batch.Events)
+		if err != nil {
+			return nil, err
+		}
+		holds = append(holds, fences...)
+		item := prepared{batch: batch, seqs: make([]int64, len(batch.Events)), types: make([]string, len(batch.Events)), data: make([][]byte, len(batch.Events))}
+		for j, ev := range batch.Events {
+			ev.Seq = batch.Expected + int64(j) + 1
+			if ev.Time.IsZero() {
+				ev.Time = now
+			}
+			item.seqs[j], item.types[j] = ev.Seq, ev.Type
+			if item.data[j], err = json.Marshal(ev); err != nil {
+				return nil, err
+			}
+		}
+		items[i] = item
+		lasts[i] = batch.Expected + int64(len(batch.Events))
+	}
+	// 租约与会话行都按固定顺序取锁，调用方的批次顺序只影响返回值。
+	sort.Slice(holds, func(i, j int) bool { return key(holds[i].ns, holds[i].id) < key(holds[j].ns, holds[j].id) })
+	sort.Slice(items, func(i, j int) bool { return items[i].batch.ID < items[j].batch.ID })
+	err := s.writeTx(ctx, func(tx pgx.Tx) error {
 		for _, h := range holds {
-			// 只校验令牌，同 Store.Save：接管必然改写令牌；UPDATE 持有租约行锁直到提交，同时顺带续约。
 			tag, err := tx.Exec(ctx, `UPDATE goagent_durable_lease SET expires_at = now() + $4 * interval '1 millisecond'
 WHERE ns = $1 AND id = $2 AND token = $3`, h.ns, h.id, h.token, s.root.cfg.LeaseTTL.Milliseconds())
 			if err != nil {
 				return err
 			}
 			if tag.RowsAffected() == 0 {
-				return fmt.Errorf("%w：会话 %q 中 %q", durable.ErrLeaseLost, id, h.id)
+				return fmt.Errorf("%w：会话 %q 中 %q", durable.ErrLeaseLost, h.ns, h.id)
 			}
 		}
-		if expected == 0 {
-			if _, err := tx.Exec(ctx, `INSERT INTO goagent_session (id, last_seq) VALUES ($1, 0) ON CONFLICT (id) DO NOTHING`, id); err != nil {
-				return err
+		var compareOnly []string
+		for _, item := range items {
+			batch := item.batch
+			if batch.Expected == 0 {
+				tag, err := tx.Exec(ctx, `INSERT INTO goagent_session (id, last_seq) VALUES ($1, 0) ON CONFLICT (id) DO NOTHING`, batch.ID)
+				if err != nil {
+					return err
+				}
+				if tag.RowsAffected() == 1 && len(batch.Events) == 0 {
+					compareOnly = append(compareOnly, batch.ID)
+				}
 			}
-		}
-		tag, err := tx.Exec(ctx, `UPDATE goagent_session SET last_seq = $3 WHERE id = $1 AND last_seq = $2`, id, expected, last)
-		if err != nil {
-			return err
-		}
-		if tag.RowsAffected() == 0 {
-			cur, err := lastSeq(ctx, tx, id)
+			last := batch.Expected + int64(len(batch.Events))
+			tag, err := tx.Exec(ctx, `UPDATE goagent_session SET last_seq = $3 WHERE id = $1 AND last_seq = $2`, batch.ID, batch.Expected, last)
 			if err != nil {
 				return err
 			}
-			return conflict(expected, cur)
+			if tag.RowsAffected() == 0 {
+				cur, err := lastSeq(ctx, tx, batch.ID)
+				if err != nil {
+					return err
+				}
+				return conflict(batch.Expected, cur)
+			}
 		}
-		_, err = tx.Exec(ctx, `INSERT INTO goagent_session_event (session_id, seq, type, event)
-SELECT $1, * FROM unnest($2::bigint[], $3::text[], $4::bytea[])`, id, seqs, types, data)
-		return err
+		for _, item := range items {
+			if len(item.data) == 0 {
+				continue
+			}
+			if _, err := tx.Exec(ctx, `INSERT INTO goagent_session_event (session_id, seq, type, event)
+SELECT $1, * FROM unnest($2::bigint[], $3::text[], $4::bytea[])`, item.batch.ID, item.seqs, item.types, item.data); err != nil {
+				return err
+			}
+		}
+		// 不存在会话的空批次只比较、不创建；临时行的唯一键锁保留到提交，
+		// 并发 Append/Fork 无法在比较后抢先创建该会话。
+		for _, id := range compareOnly {
+			if _, err := tx.Exec(ctx, `DELETE FROM goagent_session WHERE id = $1`, id); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return last, nil
+	return lasts, nil
 }
 
 // Read 实现 session.Store。

@@ -153,15 +153,7 @@ func TestNativeKeepsPluginToolExecution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := agent.Execute(context.Background(), "请执行工具")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if invoked.Load() != 0 {
-		t.Fatal("同步 Execute 意外执行工具")
-	}
-	t.Logf("Execute: result=%v tool_calls=%d", out.Result, invoked.Load())
-	out, err = Native(agent.ExecuteStream).Run(context.Background(), "请执行工具", func(builder.AgentEvent) error { return nil })
+	out, err := Native(agent.ExecuteStream).Run(context.Background(), "请执行工具", func(builder.AgentEvent) error { return nil })
 	if err != nil {
 		t.Fatal(err)
 	}

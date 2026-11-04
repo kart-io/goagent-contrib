@@ -23,14 +23,18 @@ func (*contractVector) SimilaritySearch(context.Context, string, int) ([]*interf
 
 type contractModel struct{}
 
-func (*contractModel) Complete(context.Context, *llm.CompletionRequest) (*llm.CompletionResponse, error) {
-	return &llm.CompletionResponse{Content: "refund"}, nil
-}
-func (m *contractModel) Chat(ctx context.Context, msgs []llm.Message) (*llm.CompletionResponse, error) {
-	return m.Complete(ctx, &llm.CompletionRequest{Messages: msgs})
+func (*contractModel) CompleteStream(context.Context, *llm.CompletionRequest) (<-chan *llm.StreamChunk, error) {
+	return answerStream("refund"), nil
 }
 func (*contractModel) Provider() constants.Provider { return constants.ProviderCustom }
-func (*contractModel) IsAvailable() bool            { return true }
+
+// answerStream 以一个成功终止块返回回答。
+func answerStream(content string) <-chan *llm.StreamChunk {
+	ch := make(chan *llm.StreamChunk, 1)
+	ch <- &llm.StreamChunk{Content: content, FinishReason: "stop", Done: true}
+	close(ch)
+	return ch
+}
 
 func TestConcreteRetrieverRunnableContract(t *testing.T) {
 	ctx := context.Background()

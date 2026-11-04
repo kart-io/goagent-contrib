@@ -127,7 +127,7 @@ func (m *MultiQueryRetriever) generateQueries(ctx context.Context, query string)
 	prompt := m.buildPrompt(query)
 
 	// 调用 LLM
-	response, err := m.LLMClient.Complete(ctx, &llm.CompletionRequest{
+	response, err := llm.Complete(ctx, m.LLMClient, &llm.CompletionRequest{
 		Messages: []llm.Message{
 			llm.UserMessage(prompt),
 		},

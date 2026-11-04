@@ -278,7 +278,7 @@ func (c *RAGChain) Run(ctx context.Context, query string) (string, error) {
 	}
 
 	// 4. 调用 LLM 生成回答
-	response, err := c.llmClient.Complete(ctx, &llm.CompletionRequest{
+	response, err := llm.Complete(ctx, c.llmClient, &llm.CompletionRequest{
 		Messages: []llm.Message{
 			llm.UserMessage(contextPrompt),
 		},
@@ -399,7 +399,7 @@ Original query: %s
 Please provide only the alternative queries, one per line, without numbering or explanations.`, m.NumQueries, query)
 
 	// 调用 LLM 生成查询
-	response, err := m.LLMClient.Complete(ctx, &llm.CompletionRequest{
+	response, err := llm.Complete(ctx, m.LLMClient, &llm.CompletionRequest{
 		Messages: []llm.Message{
 			llm.UserMessage(prompt),
 		},

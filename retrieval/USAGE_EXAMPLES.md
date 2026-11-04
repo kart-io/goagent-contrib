@@ -330,15 +330,15 @@ ragRetriever.SetTopK(10)             // Return up to 10 docs
 ```go
 type MyEmbedder struct{}
 
-func (e *MyEmbedder) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+func (e *MyEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]float32, error) {
     // Your embedding logic
     vectors := make([][]float32, len(texts))
     // ... generate vectors
     return vectors, nil
 }
 
-func (e *MyEmbedder) EmbedQuery(ctx context.Context, text string) ([]float32, error) {
-    vectors, err := e.Embed(ctx, []string{text})
+func (e *MyEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
+    vectors, err := e.EmbedBatch(ctx, []string{text})
     if err != nil {
         return nil, err
     }

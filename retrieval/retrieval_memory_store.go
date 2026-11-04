@@ -2,6 +2,7 @@ package retrieval
 
 import (
 	"context"
+	"reflect"
 	"sort"
 	"sync"
 
@@ -91,7 +92,7 @@ func (m *MemoryVectorStore) Add(ctx context.Context, docs []*interfaces.Document
 			texts[i] = doc.PageContent
 		}
 
-		generatedVectors, err := m.embedder.Embed(ctx, texts)
+		generatedVectors, err := m.embedder.EmbedBatch(ctx, texts)
 		if err != nil {
 			return agentErrors.Wrap(err, agentErrors.CodeRetrievalEmbedding, "failed to generate vectors").
 				WithComponent("memory_store").
@@ -133,7 +134,7 @@ func (m *MemoryVectorStore) AddDocuments(ctx context.Context, docs []*interfaces
 // Search 相似度搜索
 func (m *MemoryVectorStore) Search(ctx context.Context, query string, topK int) ([]*interfaces.Document, error) {
 	// 生成查询向量
-	queryVector, err := m.embedder.EmbedQuery(ctx, query)
+	queryVector, err := m.embedder.Embed(ctx, query)
 	if err != nil {
 		return nil, agentErrors.Wrap(err, agentErrors.CodeRetrievalEmbedding, "failed to embed query").
 			WithComponent("memory_store").
@@ -144,13 +145,33 @@ func (m *MemoryVectorStore) Search(ctx context.Context, query string, topK int) 
 	return m.SearchByVector(ctx, queryVector, topK)
 }
 
+// Retrieve 按请求检索（实现 interfaces.RequestRetriever）。TopK 未设置时为 4；
+// 先按元数据过滤再取 TopK，过滤值的类型与内容须同时相等。
+func (m *MemoryVectorStore) Retrieve(ctx context.Context, req interfaces.RetrievalRequest) ([]*interfaces.Document, error) {
+	queryVector, err := m.embedder.Embed(ctx, req.Query)
+	if err != nil {
+		return nil, agentErrors.Wrap(err, agentErrors.CodeRetrievalEmbedding, "failed to embed query").
+			WithComponent("memory_store").
+			WithOperation("retrieve")
+	}
+	topK := req.TopK
+	if topK <= 0 {
+		topK = 4
+	}
+	return m.searchByVector(queryVector, topK, req.Filter), nil
+}
+
 // SearchByVector 通过向量搜索
 func (m *MemoryVectorStore) SearchByVector(ctx context.Context, queryVector []float32, topK int) ([]*interfaces.Document, error) {
+	return m.searchByVector(queryVector, topK, nil), nil
+}
+
+func (m *MemoryVectorStore) searchByVector(queryVector []float32, topK int, filter map[string]any) []*interfaces.Document {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	if len(m.documents) == 0 {
-		return []*interfaces.Document{}, nil
+		return []*interfaces.Document{}
 	}
 
 	// 计算所有文档的相似度
@@ -162,6 +183,9 @@ func (m *MemoryVectorStore) SearchByVector(ctx context.Context, queryVector []fl
 	scores := make([]docScore, 0, len(m.documents))
 
 	for _, docWithVec := range m.documents {
+		if !matchesFilter(docWithVec.Document, filter) {
+			continue
+		}
 		score, err := m.calculateSimilarity(queryVector, docWithVec.Vector)
 		if err != nil {
 			continue // 跳过错误的向量
@@ -196,7 +220,18 @@ func (m *MemoryVectorStore) SearchByVector(ctx context.Context, queryVector []fl
 		results[i] = ds.doc
 	}
 
-	return results, nil
+	return results
+}
+
+// matchesFilter 要求文档元数据包含每个过滤键，且值的类型与内容都相等。
+func matchesFilter(doc *interfaces.Document, filter map[string]any) bool {
+	for key, want := range filter {
+		got, ok := doc.Metadata[key]
+		if !ok || !reflect.DeepEqual(got, want) {
+			return false
+		}
+	}
+	return true
 }
 
 // SimilaritySearch 相似度搜索（实现 VectorStore 接口）
@@ -243,7 +278,7 @@ func (m *MemoryVectorStore) Update(ctx context.Context, docs []*interfaces.Docum
 		}
 
 		// 重新生成向量
-		vector, err := m.embedder.EmbedQuery(ctx, doc.PageContent)
+		vector, err := m.embedder.Embed(ctx, doc.PageContent)
 		if err != nil {
 			return agentErrors.Wrap(err, agentErrors.CodeRetrievalEmbedding, "failed to generate vector for document").
 				WithComponent("memory_store").
@@ -329,5 +364,5 @@ func (m *MemoryVectorStore) calculateSimilarity(vec1, vec2 []float32) (float32, 
 
 // GetEmbedding 获取嵌入向量（实现扩展接口）
 func (m *MemoryVectorStore) GetEmbedding(ctx context.Context, text string) ([]float32, error) {
-	return m.embedder.EmbedQuery(ctx, text)
+	return m.embedder.Embed(ctx, text)
 }

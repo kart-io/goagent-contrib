@@ -23,13 +23,13 @@ GoAgent 提供统一的文本嵌入（Embedding）接口，支持多种嵌入服
 
 ```go
 type Embedder interface {
-    // Embed 批量嵌入文本
-    // 输入多个文本，返回对应的向量数组
-    Embed(ctx context.Context, texts []string) ([][]float32, error)
+    // Embed 嵌入单条文本（内嵌 llm.EmbeddingClient）
+    // 因此任意 Embedder 都可直接传给 memory.WithEmbedder 与 llm/cache 语义缓存
+    llm.EmbeddingClient
 
-    // EmbedQuery 嵌入单个查询文本
-    // 用于查询时的文本嵌入
-    EmbedQuery(ctx context.Context, query string) ([]float32, error)
+    // EmbedBatch 批量嵌入文本
+    // 输入多个文本，返回对应的向量数组
+    EmbedBatch(ctx context.Context, texts []string) ([][]float32, error)
 
     // Dimensions 返回向量维度
     Dimensions() int
@@ -247,7 +247,7 @@ func NewMyEmbedder(apiKey, model string, dimensions int) *MyEmbedder {
 }
 
 // Embed 批量嵌入文本
-func (e *MyEmbedder) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+func (e *MyEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]float32, error) {
     if len(texts) == 0 {
         return [][]float32{}, nil
     }
@@ -264,9 +264,9 @@ func (e *MyEmbedder) Embed(ctx context.Context, texts []string) ([][]float32, er
     return results, nil
 }
 
-// EmbedQuery 嵌入单个查询
-func (e *MyEmbedder) EmbedQuery(ctx context.Context, query string) ([]float32, error) {
-    vectors, err := e.Embed(ctx, []string{query})
+// Embed 嵌入单条文本
+func (e *MyEmbedder) Embed(ctx context.Context, query string) ([]float32, error) {
+    vectors, err := e.EmbedBatch(ctx, []string{query})
     if err != nil {
         return nil, err
     }
@@ -337,7 +337,7 @@ func main() {
     }
 
     // 使用嵌入器
-    vectors, err := embedder.Embed(ctx, []string{"Hello", "World"})
+    vectors, err := embedder.EmbedBatch(ctx, []string{"Hello", "World"})
     // ...
 }
 ```
@@ -392,7 +392,7 @@ docs := []string{
     "支持多种 LLM 提供商",
     "提供统一的接口抽象",
 }
-vectors, err := embedder.Embed(ctx, docs)
+vectors, err := embedder.EmbedBatch(ctx, docs)
 if err != nil {
     log.Fatal(err)
 }
@@ -400,7 +400,7 @@ if err != nil {
 fmt.Printf("嵌入了 %d 个文档，维度: %d\n", len(vectors), embedder.Dimensions())
 
 // 嵌入查询
-queryVector, err := embedder.EmbedQuery(ctx, "什么是 GoAgent？")
+queryVector, err := embedder.Embed(ctx, "什么是 GoAgent？")
 if err != nil {
     log.Fatal(err)
 }
@@ -490,11 +490,11 @@ export GOOGLE_CLOUD_PROJECT="my-project"
 ```go
 // 批量嵌入更高效
 texts := []string{"text1", "text2", "text3", ...}
-vectors, err := embedder.Embed(ctx, texts)
+vectors, err := embedder.EmbedBatch(ctx, texts)
 
 // 避免逐个嵌入
 for _, text := range texts {
-    vector, err := embedder.EmbedQuery(ctx, text) // 效率低
+    vector, err := embedder.Embed(ctx, text) // 效率低
 }
 ```
 

@@ -99,8 +99,8 @@ func NewHuggingFaceEmbedder(config HuggingFaceEmbedderConfig) (*HuggingFaceEmbed
 	}, nil
 }
 
-// Embed 批量嵌入文本
-func (e *HuggingFaceEmbedder) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+// EmbedBatch 批量嵌入文本
+func (e *HuggingFaceEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]float32, error) {
 	if len(texts) == 0 {
 		return [][]float32{}, nil
 	}
@@ -196,9 +196,9 @@ func (e *HuggingFaceEmbedder) Embed(ctx context.Context, texts []string) ([][]fl
 	return result, nil
 }
 
-// EmbedQuery 嵌入单个查询文本
-func (e *HuggingFaceEmbedder) EmbedQuery(ctx context.Context, query string) ([]float32, error) {
-	vectors, err := e.Embed(ctx, []string{query})
+// Embed 嵌入单条文本
+func (e *HuggingFaceEmbedder) Embed(ctx context.Context, query string) ([]float32, error) {
+	vectors, err := e.EmbedBatch(ctx, []string{query})
 	if err != nil {
 		return nil, err
 	}

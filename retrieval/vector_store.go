@@ -95,6 +95,47 @@ func (v *VectorStoreRetriever) GetRelevantDocuments(ctx context.Context, query s
 	return docs, nil
 }
 
+// Retrieve 按请求检索（实现 interfaces.RequestRetriever）。请求未设置 TopK 时使用检索器配置；
+// 带过滤条件时向量库必须实现 interfaces.RequestRetriever，否则返回错误而不是忽略条件。
+func (v *VectorStoreRetriever) Retrieve(ctx context.Context, req interfaces.RetrievalRequest) ([]*interfaces.Document, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if req.TopK <= 0 {
+		req.TopK = v.TopK
+	}
+	switch v.SearchType {
+	case SearchTypeSimilarity, SearchTypeSimilarityScoreThreshold, SearchTypeMMR:
+	default:
+		return nil, agentErrors.New(agentErrors.CodeInvalidInput, "unknown search type").
+			WithComponent("vector_store_retriever").
+			WithOperation("retrieve").
+			WithContext("search_type", string(v.SearchType))
+	}
+
+	var docs []*interfaces.Document
+	var err error
+	if store, ok := v.VectorStore.(interfaces.RequestRetriever); ok {
+		docs, err = store.Retrieve(ctx, req)
+	} else if len(req.Filter) > 0 {
+		return nil, agentErrors.New(agentErrors.CodeInvalidInput, "vector store does not support metadata filters").
+			WithComponent("vector_store_retriever").
+			WithOperation("retrieve")
+	} else {
+		docs, err = v.VectorStore.SimilaritySearchWithScore(ctx, req.Query, req.TopK)
+	}
+	if err != nil {
+		return nil, agentErrors.Wrap(err, agentErrors.CodeRetrievalSearch, "vector store search failed").
+			WithComponent("vector_store_retriever").
+			WithOperation("retrieve").
+			WithContext("topK", req.TopK)
+	}
+	if v.SearchType == SearchTypeSimilarityScoreThreshold {
+		docs = v.FilterByScore(docs)
+	}
+	return docs, nil
+}
+
 // WithSearchType 设置搜索类型
 func (v *VectorStoreRetriever) WithSearchType(searchType SearchType) *VectorStoreRetriever {
 	v.SearchType = searchType

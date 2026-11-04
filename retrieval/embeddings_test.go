@@ -14,7 +14,7 @@ func TestSimpleEmbedder(t *testing.T) {
 
 	t.Run("Embed single text", func(t *testing.T) {
 		texts := []string{"Hello world"}
-		vectors, err := embedder.Embed(ctx, texts)
+		vectors, err := embedder.EmbedBatch(ctx, texts)
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
 		}
@@ -35,7 +35,7 @@ func TestSimpleEmbedder(t *testing.T) {
 			"Deep learning networks",
 		}
 
-		vectors, err := embedder.Embed(ctx, texts)
+		vectors, err := embedder.EmbedBatch(ctx, texts)
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
 		}
@@ -51,9 +51,9 @@ func TestSimpleEmbedder(t *testing.T) {
 		}
 	})
 
-	t.Run("EmbedQuery", func(t *testing.T) {
+	t.Run("Embed", func(t *testing.T) {
 		query := "What is machine learning?"
-		vector, err := embedder.EmbedQuery(ctx, query)
+		vector, err := embedder.Embed(ctx, query)
 		if err != nil {
 			t.Fatalf("Expected no error, got %v", err)
 		}
@@ -292,7 +292,7 @@ func BenchmarkSimpleEmbedder(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = embedder.Embed(ctx, texts)
+		_, _ = embedder.EmbedBatch(ctx, texts)
 	}
 }
 

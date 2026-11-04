@@ -6,17 +6,18 @@ import (
 	"strings"
 
 	agentErrors "github.com/kart-io/goagent/errors"
+	"github.com/kart-io/goagent/llm"
 )
 
 // Embedder 嵌入模型接口
 //
 // 将文本转换为向量表示，用于语义搜索和相似度计算
 type Embedder interface {
-	// Embed 批量嵌入文本
-	Embed(ctx context.Context, texts []string) ([][]float32, error)
+	// Embed 嵌入单条文本；内嵌核心接口，使嵌入器可直接用于 memory.WithEmbedder 与语义缓存
+	llm.EmbeddingClient
 
-	// EmbedQuery 嵌入单个查询文本
-	EmbedQuery(ctx context.Context, query string) ([]float32, error)
+	// EmbedBatch 批量嵌入文本
+	EmbedBatch(ctx context.Context, texts []string) ([][]float32, error)
 
 	// Dimensions 返回向量维度
 	Dimensions() int
@@ -61,8 +62,8 @@ func NewSimpleEmbedder(dimensions int) *SimpleEmbedder {
 	}
 }
 
-// Embed 批量嵌入文本
-func (e *SimpleEmbedder) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+// EmbedBatch 批量嵌入文本
+func (e *SimpleEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]float32, error) {
 	if len(texts) == 0 {
 		return [][]float32{}, nil
 	}
@@ -79,8 +80,8 @@ func (e *SimpleEmbedder) Embed(ctx context.Context, texts []string) ([][]float32
 	return vectors, nil
 }
 
-// EmbedQuery 嵌入单个查询文本
-func (e *SimpleEmbedder) EmbedQuery(ctx context.Context, query string) ([]float32, error) {
+// Embed 嵌入单条文本
+func (e *SimpleEmbedder) Embed(ctx context.Context, query string) ([]float32, error) {
 	return e.textToVector(query), nil
 }
 

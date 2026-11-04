@@ -69,6 +69,22 @@ results, err := retriever.GetRelevantDocuments(ctx, "your query")
 - `SearchTypeSimilarityScoreThreshold` - 带阈值的相似度搜索
 - `SearchTypeMMR` - 最大边际相关性搜索
 
+#### 按元数据过滤
+
+`VectorStoreRetriever`、`MemoryVectorStore` 与 `qdrant.QdrantVectorStore` 实现 `interfaces.RequestRetriever`，可按租户、权限等元数据过滤：
+
+```go
+docs, err := retriever.Retrieve(ctx, interfaces.RetrievalRequest{
+    Query:  "退款政策",
+    Filter: map[string]any{"tenant_id": "acme"},
+})
+```
+
+- 每个键都须与文档元数据同名字段相等，多个键同时满足；先过滤再取 `TopK`，请求未设 `TopK` 时用检索器配置。
+- `MemoryVectorStore` 要求值的类型与内容都相等（`int` 与 `int64` 不相等）；Qdrant 在服务端过滤，值只支持 `string`、`bool`、`int`、`int64`，其他类型返回错误。
+- 底层向量库不支持过滤时，带条件的请求返回错误，不会退回未过滤的结果。
+- 接入 Agent 时配合 GoAgent 的 `builder.RetrievalConfig.Filter`，按请求从 ctx 生成条件。关键词、混合、多查询与重排检索器暂不支持过滤。
+
 ### 2. KeywordRetriever 关键词检索器
 
 使用 BM25 或 TF-IDF 算法进行检索：

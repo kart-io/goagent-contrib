@@ -90,8 +90,8 @@ func NewVertexAIEmbedder(ctx context.Context, config VertexAIEmbedderConfig) (*V
 	}, nil
 }
 
-// Embed 批量嵌入文本
-func (e *VertexAIEmbedder) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+// EmbedBatch 批量嵌入文本
+func (e *VertexAIEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]float32, error) {
 	if len(texts) == 0 {
 		return [][]float32{}, nil
 	}
@@ -180,8 +180,8 @@ func (e *VertexAIEmbedder) Embed(ctx context.Context, texts []string) ([][]float
 	return vectors, nil
 }
 
-// EmbedQuery 嵌入单个查询文本
-func (e *VertexAIEmbedder) EmbedQuery(ctx context.Context, query string) ([]float32, error) {
+// Embed 嵌入单条文本
+func (e *VertexAIEmbedder) Embed(ctx context.Context, query string) ([]float32, error) {
 	// 构建请求实例（查询任务类型不同）
 	instance, err := structpb.NewStruct(map[string]interface{}{
 		"content":   query,

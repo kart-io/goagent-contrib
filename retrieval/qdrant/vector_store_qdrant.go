@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sort"
 	"strconv"
 
 	"github.com/google/uuid"
@@ -273,7 +274,7 @@ func (q *QdrantVectorStore) AddDocuments(ctx context.Context, docs []*interfaces
 		texts[i] = doc.PageContent
 	}
 
-	vectors, err := q.config.Embedder.Embed(ctx, texts)
+	vectors, err := q.config.Embedder.EmbedBatch(ctx, texts)
 	if err != nil {
 		return agentErrors.Wrap(err, agentErrors.CodeRetrievalEmbedding, "failed to generate vectors").
 			WithComponent("qdrant_store").
@@ -287,7 +288,7 @@ func (q *QdrantVectorStore) AddDocuments(ctx context.Context, docs []*interfaces
 // Search 相似度搜索
 func (q *QdrantVectorStore) Search(ctx context.Context, query string, topK int) ([]*interfaces.Document, error) {
 	// 生成查询向量
-	queryVector, err := q.config.Embedder.EmbedQuery(ctx, query)
+	queryVector, err := q.config.Embedder.Embed(ctx, query)
 	if err != nil {
 		return nil, agentErrors.Wrap(err, agentErrors.CodeRetrievalEmbedding, "failed to embed query").
 			WithComponent("qdrant_store").
@@ -298,8 +299,60 @@ func (q *QdrantVectorStore) Search(ctx context.Context, query string, topK int) 
 	return q.SearchByVector(ctx, queryVector, topK)
 }
 
+// Retrieve 按请求检索（实现 interfaces.RequestRetriever），过滤条件交给 Qdrant 在服务端执行。
+// 过滤值支持 string、bool、int、int64，与写入时的 payload 类型对应；其他类型返回错误。
+func (q *QdrantVectorStore) Retrieve(ctx context.Context, req interfaces.RetrievalRequest) ([]*interfaces.Document, error) {
+	filter, err := qdrantFilter(req.Filter)
+	if err != nil {
+		return nil, err
+	}
+	queryVector, err := q.config.Embedder.Embed(ctx, req.Query)
+	if err != nil {
+		return nil, agentErrors.Wrap(err, agentErrors.CodeRetrievalEmbedding, "failed to embed query").
+			WithComponent("qdrant_store").
+			WithOperation("retrieve")
+	}
+	return q.searchByVector(ctx, queryVector, req.TopK, filter)
+}
+
+// qdrantFilter 把等值条件转换为 Qdrant 的 must 条件，按键排序以保证请求稳定。
+func qdrantFilter(filter map[string]any) (*qdrant.Filter, error) {
+	if len(filter) == 0 {
+		return nil, nil
+	}
+	keys := make([]string, 0, len(filter))
+	for key := range filter {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	conditions := make([]*qdrant.Condition, 0, len(keys))
+	for _, key := range keys {
+		switch value := filter[key].(type) {
+		case string:
+			conditions = append(conditions, qdrant.NewMatchKeyword(key, value))
+		case bool:
+			conditions = append(conditions, qdrant.NewMatchBool(key, value))
+		case int:
+			conditions = append(conditions, qdrant.NewMatchInt(key, int64(value)))
+		case int64:
+			conditions = append(conditions, qdrant.NewMatchInt(key, value))
+		default:
+			return nil, agentErrors.New(agentErrors.CodeInvalidInput, "unsupported metadata filter value").
+				WithComponent("qdrant_store").
+				WithOperation("retrieve").
+				WithContext("key", key).
+				WithContext("type", fmt.Sprintf("%T", value))
+		}
+	}
+	return &qdrant.Filter{Must: conditions}, nil
+}
+
 // SearchByVector 通过向量搜索
 func (q *QdrantVectorStore) SearchByVector(ctx context.Context, queryVector []float32, topK int) ([]*interfaces.Document, error) {
+	return q.searchByVector(ctx, queryVector, topK, nil)
+}
+
+func (q *QdrantVectorStore) searchByVector(ctx context.Context, queryVector []float32, topK int, filter *qdrant.Filter) ([]*interfaces.Document, error) {
 	if topK <= 0 {
 		topK = 4
 	}
@@ -308,6 +361,7 @@ func (q *QdrantVectorStore) SearchByVector(ctx context.Context, queryVector []fl
 	results, err := q.client.Query(ctx, &qdrant.QueryPoints{
 		CollectionName: q.config.CollectionName,
 		Query:          qdrant.NewQuery(queryVector...),
+		Filter:         filter,
 		Limit:          uintPtr(uint64(topK)),
 		WithPayload:    qdrant.NewWithPayload(true),
 	})
@@ -438,7 +492,7 @@ func (q *QdrantVectorStore) Update(ctx context.Context, docs []*interfaces.Docum
 		texts[i] = doc.PageContent
 	}
 
-	vectors, err := q.config.Embedder.Embed(ctx, texts)
+	vectors, err := q.config.Embedder.EmbedBatch(ctx, texts)
 	if err != nil {
 		return agentErrors.Wrap(err, agentErrors.CodeRetrievalEmbedding, "failed to generate vectors for update").
 			WithComponent("qdrant_store").
@@ -452,7 +506,7 @@ func (q *QdrantVectorStore) Update(ctx context.Context, docs []*interfaces.Docum
 
 // GetEmbedding 获取嵌入向量
 func (q *QdrantVectorStore) GetEmbedding(ctx context.Context, text string) ([]float32, error) {
-	return q.config.Embedder.EmbedQuery(ctx, text)
+	return q.config.Embedder.Embed(ctx, text)
 }
 
 // Close 关闭连接

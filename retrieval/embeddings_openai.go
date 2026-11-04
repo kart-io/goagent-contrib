@@ -90,8 +90,8 @@ func NewOpenAIEmbedder(config OpenAIEmbedderConfig) (*OpenAIEmbedder, error) {
 	}, nil
 }
 
-// Embed 批量嵌入文本
-func (e *OpenAIEmbedder) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+// EmbedBatch 批量嵌入文本
+func (e *OpenAIEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]float32, error) {
 	if len(texts) == 0 {
 		return [][]float32{}, nil
 	}
@@ -125,9 +125,9 @@ func (e *OpenAIEmbedder) Embed(ctx context.Context, texts []string) ([][]float32
 	return results, nil
 }
 
-// EmbedQuery 嵌入单个查询文本
-func (e *OpenAIEmbedder) EmbedQuery(ctx context.Context, query string) ([]float32, error) {
-	vectors, err := e.Embed(ctx, []string{query})
+// Embed 嵌入单条文本
+func (e *OpenAIEmbedder) Embed(ctx context.Context, query string) ([]float32, error) {
+	vectors, err := e.EmbedBatch(ctx, []string{query})
 	if err != nil {
 		return nil, err
 	}

@@ -254,7 +254,7 @@ func TestSimpleEmbedderEmptyTexts(t *testing.T) {
 	ctx := context.Background()
 	embedder := NewSimpleEmbedder(50)
 
-	vectors, err := embedder.Embed(ctx, []string{})
+	vectors, err := embedder.EmbedBatch(ctx, []string{})
 	if err != nil {
 		t.Fatalf("Embedding empty list failed: %v", err)
 	}
@@ -271,12 +271,12 @@ func TestSimpleEmbedderConsistency(t *testing.T) {
 
 	text := "Machine learning is powerful"
 
-	vec1, err := embedder.EmbedQuery(ctx, text)
+	vec1, err := embedder.Embed(ctx, text)
 	if err != nil {
 		t.Fatalf("First embedding failed: %v", err)
 	}
 
-	vec2, err := embedder.EmbedQuery(ctx, text)
+	vec2, err := embedder.Embed(ctx, text)
 	if err != nil {
 		t.Fatalf("Second embedding failed: %v", err)
 	}
@@ -300,7 +300,7 @@ func TestSimpleEmbedderVariability(t *testing.T) {
 		"Natural language processing",
 	}
 
-	vectors, err := embedder.Embed(ctx, texts)
+	vectors, err := embedder.EmbedBatch(ctx, texts)
 	if err != nil {
 		t.Fatalf("Embedding failed: %v", err)
 	}
@@ -336,7 +336,7 @@ func TestSimpleEmbedderWithDifferentDimensions(t *testing.T) {
 				t.Errorf("Expected dimensions %d, got %d", dim, embedder.Dimensions())
 			}
 
-			vectors, err := embedder.Embed(ctx, []string{"test text"})
+			vectors, err := embedder.EmbedBatch(ctx, []string{"test text"})
 			if err != nil {
 				t.Fatalf("Embedding failed: %v", err)
 			}
@@ -369,7 +369,7 @@ func TestSimpleEmbedderLargeText(t *testing.T) {
 		largeText += "word "
 	}
 
-	vector, err := embedder.EmbedQuery(ctx, largeText)
+	vector, err := embedder.Embed(ctx, largeText)
 	if err != nil {
 		t.Fatalf("Embedding large text failed: %v", err)
 	}
@@ -391,7 +391,7 @@ func TestSimpleEmbedderSpecialCharacters(t *testing.T) {
 		"日本語テキスト",
 	}
 
-	vectors, err := embedder.Embed(ctx, texts)
+	vectors, err := embedder.EmbedBatch(ctx, texts)
 	if err != nil {
 		t.Fatalf("Embedding special characters failed: %v", err)
 	}

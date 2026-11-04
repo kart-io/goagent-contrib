@@ -225,12 +225,12 @@ func TestHuggingFaceEmbedder_Embed_EmptyTexts(t *testing.T) {
 	}
 	embedder, _ := NewHuggingFaceEmbedder(config)
 
-	result, err := embedder.Embed(context.Background(), []string{})
+	result, err := embedder.EmbedBatch(context.Background(), []string{})
 	require.NoError(t, err)
 	assert.Empty(t, result)
 }
 
-func TestHuggingFaceEmbedder_Embed_MockServer(t *testing.T) {
+func TestHuggingFaceEmbedder_EmbedBatch_MockServer(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "POST", r.Method)
 		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
@@ -249,7 +249,7 @@ func TestHuggingFaceEmbedder_Embed_MockServer(t *testing.T) {
 	}
 	embedder, _ := NewHuggingFaceEmbedder(config)
 
-	result, err := embedder.Embed(context.Background(), []string{"hello", "world"})
+	result, err := embedder.EmbedBatch(context.Background(), []string{"hello", "world"})
 	require.NoError(t, err)
 	assert.Len(t, result, 2)
 	assert.Len(t, result[0], 3)
@@ -270,7 +270,7 @@ func TestHuggingFaceEmbedder_Embed_NestedResponse(t *testing.T) {
 	}
 	embedder, _ := NewHuggingFaceEmbedder(config)
 
-	result, err := embedder.Embed(context.Background(), []string{"hello", "world"})
+	result, err := embedder.EmbedBatch(context.Background(), []string{"hello", "world"})
 	require.NoError(t, err)
 	assert.Len(t, result, 2)
 	// 取第一个 token 的嵌入
@@ -278,7 +278,7 @@ func TestHuggingFaceEmbedder_Embed_NestedResponse(t *testing.T) {
 	assert.Equal(t, float32(0.7), result[1][0])
 }
 
-func TestHuggingFaceEmbedder_EmbedQuery_MockServer(t *testing.T) {
+func TestHuggingFaceEmbedder_EmbedSingle_MockServer(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -292,7 +292,7 @@ func TestHuggingFaceEmbedder_EmbedQuery_MockServer(t *testing.T) {
 	}
 	embedder, _ := NewHuggingFaceEmbedder(config)
 
-	result, err := embedder.EmbedQuery(context.Background(), "query")
+	result, err := embedder.Embed(context.Background(), "query")
 	require.NoError(t, err)
 	assert.Len(t, result, 3)
 }
@@ -311,7 +311,7 @@ func TestHuggingFaceEmbedder_Embed_ErrorResponse(t *testing.T) {
 	}
 	embedder, _ := NewHuggingFaceEmbedder(config)
 
-	result, err := embedder.Embed(context.Background(), []string{"hello"})
+	result, err := embedder.EmbedBatch(context.Background(), []string{"hello"})
 	assert.Error(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, err.Error(), "Model is loading")

@@ -107,8 +107,8 @@ func NewCohereEmbedder(config CohereEmbedderConfig) (*CohereEmbedder, error) {
 	}, nil
 }
 
-// Embed 批量嵌入文本
-func (e *CohereEmbedder) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+// EmbedBatch 批量嵌入文本
+func (e *CohereEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]float32, error) {
 	if len(texts) == 0 {
 		return [][]float32{}, nil
 	}
@@ -184,8 +184,8 @@ func (e *CohereEmbedder) Embed(ctx context.Context, texts []string) ([][]float32
 	return embedResp.Embeddings, nil
 }
 
-// EmbedQuery 嵌入单个查询文本
-func (e *CohereEmbedder) EmbedQuery(ctx context.Context, query string) ([]float32, error) {
+// Embed 嵌入单条文本
+func (e *CohereEmbedder) Embed(ctx context.Context, query string) ([]float32, error) {
 	// 查询时使用 search_query 输入类型
 	originalInputType := e.inputType
 	e.inputType = "search_query"
@@ -193,7 +193,7 @@ func (e *CohereEmbedder) EmbedQuery(ctx context.Context, query string) ([]float3
 		e.inputType = originalInputType
 	}()
 
-	vectors, err := e.Embed(ctx, []string{query})
+	vectors, err := e.EmbedBatch(ctx, []string{query})
 	if err != nil {
 		return nil, err
 	}

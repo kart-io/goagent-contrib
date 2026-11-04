@@ -72,12 +72,12 @@ func TestCohereEmbedder_Embed_EmptyTexts(t *testing.T) {
 	}
 	embedder, _ := NewCohereEmbedder(config)
 
-	result, err := embedder.Embed(context.Background(), []string{})
+	result, err := embedder.EmbedBatch(context.Background(), []string{})
 	require.NoError(t, err)
 	assert.Empty(t, result)
 }
 
-func TestCohereEmbedder_Embed_MockServer(t *testing.T) {
+func TestCohereEmbedder_EmbedBatch_MockServer(t *testing.T) {
 	// 创建模拟服务器
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "POST", r.Method)
@@ -100,13 +100,13 @@ func TestCohereEmbedder_Embed_MockServer(t *testing.T) {
 	}
 	embedder, _ := NewCohereEmbedder(config)
 
-	result, err := embedder.Embed(context.Background(), []string{"hello", "world"})
+	result, err := embedder.EmbedBatch(context.Background(), []string{"hello", "world"})
 	require.NoError(t, err)
 	assert.Len(t, result, 2)
 	assert.Len(t, result[0], 3)
 }
 
-func TestCohereEmbedder_EmbedQuery_MockServer(t *testing.T) {
+func TestCohereEmbedder_EmbedSingle_MockServer(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -124,7 +124,7 @@ func TestCohereEmbedder_EmbedQuery_MockServer(t *testing.T) {
 	}
 	embedder, _ := NewCohereEmbedder(config)
 
-	result, err := embedder.EmbedQuery(context.Background(), "query")
+	result, err := embedder.Embed(context.Background(), "query")
 	require.NoError(t, err)
 	assert.Len(t, result, 3)
 }
@@ -143,7 +143,7 @@ func TestCohereEmbedder_Embed_ErrorResponse(t *testing.T) {
 	}
 	embedder, _ := NewCohereEmbedder(config)
 
-	result, err := embedder.Embed(context.Background(), []string{"hello"})
+	result, err := embedder.EmbedBatch(context.Background(), []string{"hello"})
 	assert.Error(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, err.Error(), "invalid request")

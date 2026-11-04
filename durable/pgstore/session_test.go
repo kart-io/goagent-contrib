@@ -99,20 +99,10 @@ func (m *toolModel) CompleteToolsStream(_ context.Context, req *llm.CompletionRe
 	close(ch)
 	return ch, nil
 }
-func (*toolModel) Complete(context.Context, *llm.CompletionRequest) (*llm.CompletionResponse, error) {
-	return nil, errors.New("unused")
-}
-func (*toolModel) Chat(context.Context, []llm.Message) (*llm.CompletionResponse, error) {
-	return nil, errors.New("unused")
-}
 func (*toolModel) CompleteStream(context.Context, *llm.CompletionRequest) (<-chan *llm.StreamChunk, error) {
 	return nil, errors.New("unused")
 }
-func (*toolModel) ChatStream(context.Context, []llm.Message) (<-chan *llm.StreamChunk, error) {
-	return nil, errors.New("unused")
-}
 func (*toolModel) Provider() constants.Provider { return constants.ProviderCustom }
-func (*toolModel) IsAvailable() bool            { return true }
 
 // Agent 的会话日志与持久快照写入同一个 Postgres 会话：一个实例在工具执行中中断，另一个实例以同一执行键恢复，
 // 只请求剩余的模型回合，日志中只有一轮、消息不重复。

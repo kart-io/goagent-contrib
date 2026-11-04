@@ -89,8 +89,8 @@ github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 h1:/Tnpcb2E0Pz/tN9s3bfEY2Q8ePC
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0/go.mod h1:zOBXOsUaBSjKgmH4OGzV1esUpR3oUSCPYVd2cUBjKYY=
 github.com/invopop/jsonschema v0.14.0 h1:MHQqLhvpNUZfw+hM3AZDYK7jxO8FZoQeQM77g8iyZjg=
 github.com/invopop/jsonschema v0.14.0/go.mod h1:ygm6C2EaVNMBDPpaPlnOA2pFAxBnxGjFlMZABxm9n2I=
-github.com/kart-io/goagent v0.43.1 h1:3kFb5Xt2AkIjk60MBHLsBEkuQcWAizoSMMoAMaMU1p8=
-github.com/kart-io/goagent v0.43.1/go.mod h1:RQasKLFjHgzPeutECXlz/mII/bO7spp3n4vIFZjX/SM=
+github.com/kart-io/goagent v0.47.0 h1:KG8t1aUGEpU/686JamReEVPcC9I5VyrrA7owecO/Whg=
+github.com/kart-io/goagent v0.47.0/go.mod h1:RQasKLFjHgzPeutECXlz/mII/bO7spp3n4vIFZjX/SM=
 github.com/kart-io/logger v0.2.2 h1:YLTNkqR4nL5z1nvPbmSfhY3WvodVIYwFoml+JWgvNl8=
 github.com/kart-io/logger v0.2.2/go.mod h1:FslDvmiuObMHG/DRSpqT+gYJrviu4ieEW7ytRyj0Ack=
 github.com/klauspost/cpuid/v2 v2.2.9 h1:66ze0taIn2H33fBvCkXuv9BmCwDfafmiIVpKV9kKGuY=

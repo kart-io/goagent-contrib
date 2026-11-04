@@ -6,7 +6,7 @@
 //
 // 前置条件：
 //   - Pool 直连主库，不能指向读副本或读写分离代理；经过 pgbouncer 事务模式时须关闭预编译语句缓存。
-//   - 高可用部署须同步复制并隔离旧主；Save 与 RemoveScope 的墓碑事务会 SET LOCAL synchronous_commit = on。
+//   - 高可用部署须同步复制并隔离旧主；Save、SaveAll 与 RemoveScope 的墓碑事务会 SET LOCAL synchronous_commit = on。
 //     租约的获取、续约与删除不强制同步：切换中丢失只会让某个持有者的写入因令牌不符被拒，不会出现两个可写的持有者。
 //   - LeaseTTL 须大于一次主备切换的时长。
 //   - 表结构见 Schema，由宿主建表；使用 SessionStore 时另建 SessionSchema。
@@ -163,7 +163,7 @@ func (s *Store) Save(ctx context.Context, id string, snap *durable.Snapshot) err
 	return s.save(ctx, "", id, snap)
 }
 
-// SaveAll 实现 durable.Store。
+// SaveAll 在一个同步提交事务中校验全部租约并保存全部快照。
 func (s *Store) SaveAll(ctx context.Context, writes ...durable.Write) error {
 	return s.saveAll(ctx, "", writes)
 }

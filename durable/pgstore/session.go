@@ -148,6 +148,8 @@ func (s *SessionStore) planAppend(batch session.AppendBatch) (*appendPlan, error
 	if err != nil {
 		return nil, err
 	}
+	// 同一会话可能包含多个快照，按租约名称取行锁，避免批次内快照顺序相反时死锁。
+	slices.SortFunc(holds, func(a, b *hold) int { return strings.Compare(a.id, b.id) })
 	now := time.Now().UTC()
 	n := len(batch.Events)
 	plan := &appendPlan{id: batch.ID, expected: batch.Expected, last: batch.Expected + int64(n), holds: holds,
@@ -179,11 +181,29 @@ WHERE ns = $1 AND id = $2 AND token = $3`, h.ns, h.id, h.token, ttl.Milliseconds
 		}
 	}
 	if len(p.seqs) == 0 {
-		cur, err := lastSeq(ctx, tx, p.id)
-		if err == nil && cur != p.expected {
-			err = conflict(p.expected, cur)
+		// 空批次的比较也须保持到整个事务提交。不存在的会话用临时行
+		// 取得唯一键锁，之后删除；并发 Append/Fork 仍须等待提交。
+		created := false
+		if p.expected == 0 {
+			tag, err := tx.Exec(ctx, `INSERT INTO goagent_session (id, last_seq) VALUES ($1, 0) ON CONFLICT (id) DO NOTHING`, p.id)
+			if err != nil {
+				return err
+			}
+			created = tag.RowsAffected() == 1
 		}
-		return err
+		var cur int64
+		err := tx.QueryRow(ctx, `SELECT last_seq FROM goagent_session WHERE id = $1 FOR UPDATE`, p.id).Scan(&cur)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		if cur != p.expected {
+			return conflict(p.expected, cur)
+		}
+		if created {
+			_, err = tx.Exec(ctx, `DELETE FROM goagent_session WHERE id = $1`, p.id)
+			return err
+		}
+		return nil
 	}
 	if p.expected == 0 {
 		if _, err := tx.Exec(ctx, `INSERT INTO goagent_session (id, last_seq) VALUES ($1, 0) ON CONFLICT (id) DO NOTHING`, p.id); err != nil {

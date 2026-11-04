@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/cohere-ai/cohere-go/v2 v2.16.0
-	github.com/kart-io/goagent v0.46.0
+	github.com/kart-io/goagent v0.47.0
 	github.com/kart-io/goagent-contrib/retrieval v0.4.0
 	github.com/stretchr/testify v1.12.1
 )

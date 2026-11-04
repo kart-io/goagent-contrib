@@ -34,6 +34,7 @@ func (c *scope) Save(ctx context.Context, id string, snap *durable.Snapshot) err
 	return c.root.save(ctx, c.ns, id, snap)
 }
 
+// SaveAll 只在当前作用域内原子保存全部快照。
 func (c *scope) SaveAll(ctx context.Context, writes ...durable.Write) error {
 	return c.root.saveAll(ctx, c.ns, writes)
 }

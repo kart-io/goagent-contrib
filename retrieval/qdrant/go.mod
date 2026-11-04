@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/google/uuid v1.6.0
-	github.com/kart-io/goagent v0.43.0
+	github.com/kart-io/goagent v0.43.1
 	github.com/kart-io/goagent-contrib/retrieval v0.3.0
 	github.com/qdrant/go-client v1.16.0
 	github.com/stretchr/testify v1.12.1

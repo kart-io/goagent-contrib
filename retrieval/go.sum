@@ -50,8 +50,8 @@ github.com/gorilla/websocket v1.5.3 h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aN
 github.com/gorilla/websocket v1.5.3/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
 github.com/invopop/jsonschema v0.14.0 h1:MHQqLhvpNUZfw+hM3AZDYK7jxO8FZoQeQM77g8iyZjg=
 github.com/invopop/jsonschema v0.14.0/go.mod h1:ygm6C2EaVNMBDPpaPlnOA2pFAxBnxGjFlMZABxm9n2I=
-github.com/kart-io/goagent v0.43.0 h1:TCtQlXjbjQH5EzEnE12wzyTYGP+Z/GjqX3XluORnpwQ=
-github.com/kart-io/goagent v0.43.0/go.mod h1:RQasKLFjHgzPeutECXlz/mII/bO7spp3n4vIFZjX/SM=
+github.com/kart-io/goagent v0.43.1 h1:3kFb5Xt2AkIjk60MBHLsBEkuQcWAizoSMMoAMaMU1p8=
+github.com/kart-io/goagent v0.43.1/go.mod h1:RQasKLFjHgzPeutECXlz/mII/bO7spp3n4vIFZjX/SM=
 github.com/klauspost/cpuid/v2 v2.2.9 h1:66ze0taIn2H33fBvCkXuv9BmCwDfafmiIVpKV9kKGuY=
 github.com/klauspost/cpuid/v2 v2.2.9/go.mod h1:rqkxqrZ1EhYM9G+hXH7YdowN5R5RGN6NK4QwQ3WMXF8=
 github.com/pb33f/ordered-map/v2 v2.3.1 h1:5319HDO0aw4DA4gzi+zv4FXU9UlSs3xGZ40wcP1nBjY=

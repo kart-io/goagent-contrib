@@ -3,7 +3,7 @@ module github.com/kart-io/goagent-contrib/document/pdf
 go 1.26.0
 
 require (
-	github.com/kart-io/goagent v0.43.0
+	github.com/kart-io/goagent v0.43.1
 	github.com/kart-io/goagent-contrib/document v0.3.0
 	github.com/kart-io/goagent-contrib/retrieval v0.3.0
 	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728

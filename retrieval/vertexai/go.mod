@@ -4,8 +4,8 @@ go 1.26.0
 
 require (
 	cloud.google.com/go/aiplatform v1.90.0
-	github.com/kart-io/goagent v0.36.0
-	github.com/kart-io/goagent-contrib/retrieval v0.1.0
+	github.com/kart-io/goagent v0.43.0
+	github.com/kart-io/goagent-contrib/retrieval v0.3.0
 	github.com/stretchr/testify v1.12.1
 	google.golang.org/api v0.256.0
 	google.golang.org/protobuf v1.36.12

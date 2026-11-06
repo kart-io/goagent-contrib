@@ -1,9 +1,9 @@
 module github.com/kart-io/goagent-contrib/document
 
-go 1.26.0
+go 1.27.0
 
 require (
-	github.com/kart-io/goagent v0.47.0
+	github.com/kart-io/goagent v0.49.2
 	github.com/kart-io/goagent-contrib/retrieval v0.3.0
 	github.com/stretchr/testify v1.12.1
 )

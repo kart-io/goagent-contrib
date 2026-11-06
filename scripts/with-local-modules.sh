@@ -17,5 +17,5 @@ done < <(find "$repo_root" -name go.mod -not -path '*/.git/*' | sort)
 if [[ -n "${GOAGENT_CORE_ROOT:-}" ]]; then
   go work use "$GOAGENT_CORE_ROOT"
 fi
-go work edit -go=1.26.0
+go work edit -go=1.27.0 -toolchain=go1.27.3
 "$@"

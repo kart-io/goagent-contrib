@@ -9,11 +9,11 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"github.com/go-resty/resty/v2"
 
+	"github.com/kart-io/goagent/codec/json"
 	agentcore "github.com/kart-io/goagent/core"
 	agentErrors "github.com/kart-io/goagent/errors"
 	"github.com/kart-io/goagent/interfaces"
 	"github.com/kart-io/goagent/utils/httpclient"
-	"github.com/kart-io/goagent/utils/json"
 )
 
 // WebScraperTool scrapes web pages and extracts structured data

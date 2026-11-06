@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/kart-io/goagent/codec/json"
 	agentErrors "github.com/kart-io/goagent/errors"
-	"github.com/kart-io/goagent/utils/json"
 )
 
 // HuggingFaceEmbedder 使用 Hugging Face 的嵌入模型

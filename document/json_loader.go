@@ -7,10 +7,10 @@ import (
 	"strings"
 
 	"github.com/kart-io/goagent-contrib/retrieval"
+	"github.com/kart-io/goagent/codec/json"
 	"github.com/kart-io/goagent/core"
 	"github.com/kart-io/goagent/errors"
 	"github.com/kart-io/goagent/interfaces"
-	"github.com/kart-io/goagent/utils/json"
 )
 
 // JSONLoader JSON 文件加载器

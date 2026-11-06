@@ -7,12 +7,12 @@ import (
 
 	"github.com/go-resty/resty/v2"
 
+	"github.com/kart-io/goagent/codec/json"
 	agentcore "github.com/kart-io/goagent/core"
 	agentErrors "github.com/kart-io/goagent/errors"
 	"github.com/kart-io/goagent/interfaces"
 	"github.com/kart-io/goagent/tools"
 	"github.com/kart-io/goagent/utils/httpclient"
-	"github.com/kart-io/goagent/utils/json"
 )
 
 // APICallerTool makes HTTP API calls with authentication and retry logic

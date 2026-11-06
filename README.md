@@ -42,7 +42,7 @@ defer store.Close(ctx)
 
 ```bash
 ./scripts/test-all.sh   # 对全部模块运行 go vet 与 go test -race（不连接外部服务）
-./scripts/lint-all.sh   # 对全部模块运行 golangci-lint（与 CI 相同，v2.15.0，Go 1.26）
+./scripts/lint-all.sh   # 对全部模块运行 golangci-lint（与 CI 相同，v2.15.0，Go 1.27.3）
 ```
 
 `test-all.sh`、`lint-all.sh` 和 CI 使用临时工作区，使本仓库模块相互引用当前源码；没有把绝对 `replace` 写入发布模块。只验证单模块的已发布依赖时使用 `GOWORK=off`。本地核心联调可运行 `GOAGENT_CORE_ROOT=../goagent bash scripts/test-all.sh -short`。同仓库依赖修改必须联合发布后，才更新它们的版本锁定。
@@ -55,12 +55,19 @@ pgstore 的 Postgres 测试：
 
 也可以指定已有数据库：`GOAGENT_PGSTORE_DSN=postgres://... go test ./...`（在 `durable/pgstore` 目录下）；未设置时 Postgres 测试被跳过。
 
-CI 对每个模块在 Go 1.26 下运行 vet、`go test -race` 与 golangci-lint，pgstore 连接服务容器中的 Postgres；数据库重启与同步提交测试需要专用容器，只在本地 `test-pgstore.sh` 中运行。
+CI 对每个模块在 Go 1.27.3 下运行 vet、`go test -race` 与 golangci-lint，pgstore 连接服务容器中的 Postgres；数据库重启与同步提交测试需要专用容器，只在本地 `test-pgstore.sh` 中运行。
 
 ### 版本
 
-本轮接口基线为 goagent v0.47.0、Go 1.26。`llm.Client` 使用 `CompleteStream`；完整响应通过 `llm.Complete` / `llm.Chat` 收集。模块 tag 形如 `durable/pgstore/v0.2.0`：
+采用新编解码入口的8个模块最低依赖 goagent v0.49.2、Go 1.27.0，开发/CI工具链为Go1.27.3；其余模块维持既有最低依赖。`llm.Client` 使用 `CompleteStream`；完整响应通过 `llm.Complete` / `llm.Chat` 收集。模块 tag 形如 `durable/pgstore/v0.2.0`：
 
 ```bash
 go get github.com/kart-io/goagent-contrib/durable/pgstore@v0.2.0
 ```
+
+
+### 编解码入口迁移
+
+JSON调用统一从`github.com/kart-io/goagent/codec/json`导入，现有Marshal/Unmarshal用法保持。不要恢复已删除的utils/json路径。临时工作区使用Go1.27.0并声明go1.27.3工具链；`GOAGENT_CORE_ROOT`可显式选择核心工作树，不把本机绝对replace写入发布模块。
+
+本次改动同时影响retrieval、document及其子模块等多个独立模块。同仓源码使用临时workspace联合验证；`GOWORK=off`仅表示验证锁定的已发布依赖，不能把本地联调成功等同于发布依赖已包含新源码。发布时先发布迁移后的retrieval，再更新并发布依赖它的document、cohere、qdrant、vertexai，最后发布PDF模块；实际tag和版本锁定须在联合发布时更新，不能指向尚未发布的虚构版本。

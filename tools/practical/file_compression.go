@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/kart-io/goagent/codec/json"
 	agentcore "github.com/kart-io/goagent/core"
 	agentErrors "github.com/kart-io/goagent/errors"
 	"github.com/kart-io/goagent/interfaces"
 	"github.com/kart-io/goagent/utils"
-	"github.com/kart-io/goagent/utils/json"
 )
 
 // FileCompressionTool 处理文件压缩和解压操作

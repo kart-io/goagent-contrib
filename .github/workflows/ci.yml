@@ -51,7 +51,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: '1.27.3'
           cache-dependency-path: ${{ matrix.module }}/go.sum
 
       - name: Use local contrib modules
@@ -64,7 +64,7 @@ jobs:
           while IFS= read -r mod; do
             go work use "$(dirname "$mod")"
           done < <(find "$GITHUB_WORKSPACE" -name go.mod -not -path '*/.git/*' | sort)
-          go work edit -go=1.26.0
+          go work edit -go=1.27.0 -toolchain=go1.27.3
           echo "GOWORK=$GOWORK" >> "$GITHUB_ENV"
 
       - name: Vet

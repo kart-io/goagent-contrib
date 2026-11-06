@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/kart-io/goagent/codec/json"
 	agentcore "github.com/kart-io/goagent/core"
 	agentErrors "github.com/kart-io/goagent/errors"
 	"github.com/kart-io/goagent/interfaces"
 	"github.com/kart-io/goagent/tools"
-	"github.com/kart-io/goagent/utils/json"
 )
 
 // FileOperationsTool 保留用于向后兼容，内部委托给专门的工具

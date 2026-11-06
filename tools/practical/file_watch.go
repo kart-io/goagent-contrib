@@ -5,10 +5,10 @@ import (
 	"os"
 	"time"
 
+	"github.com/kart-io/goagent/codec/json"
 	agentcore "github.com/kart-io/goagent/core"
 	agentErrors "github.com/kart-io/goagent/errors"
 	"github.com/kart-io/goagent/interfaces"
-	"github.com/kart-io/goagent/utils/json"
 )
 
 // FileWatchTool 处理文件监控操作

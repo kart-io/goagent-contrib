@@ -8,8 +8,8 @@ import (
 	"os"
 
 	"github.com/kart-io/goagent-contrib/retrieval"
+	"github.com/kart-io/goagent/codec/json"
 	agentErrors "github.com/kart-io/goagent/errors"
-	"github.com/kart-io/goagent/utils/json"
 )
 
 // CohereEmbedder 使用 Cohere 的嵌入模型

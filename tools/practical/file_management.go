@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kart-io/goagent/codec/json"
 	agentcore "github.com/kart-io/goagent/core"
 	agentErrors "github.com/kart-io/goagent/errors"
 	"github.com/kart-io/goagent/interfaces"
 	"github.com/kart-io/goagent/utils"
-	"github.com/kart-io/goagent/utils/json"
 )
 
 // FileManagementTool 处理文件管理相关操作

@@ -73,8 +73,12 @@ github.com/kart-io/goagent v0.47.0 h1:KG8t1aUGEpU/686JamReEVPcC9I5VyrrA7owecO/Wh
 github.com/kart-io/goagent v0.47.0/go.mod h1:RQasKLFjHgzPeutECXlz/mII/bO7spp3n4vIFZjX/SM=
 github.com/kart-io/goagent v0.49.2 h1:HW+2kbPFPg1AytnbwtyRZ7VlAuqYFUsRk0kofXFZpjY=
 github.com/kart-io/goagent v0.49.2/go.mod h1:oOPeUKvkReCaag5//AtZZCqY0G5u/OS7cP3xemcnYuI=
+github.com/kart-io/goagent v0.49.3-0.20261107151110-dae60f4779d4 h1:xB7C1S4ZonTq39Kpl2wQ5W3Obn/Bbm26XBAMPQJN5/8=
+github.com/kart-io/goagent v0.49.3-0.20261107151110-dae60f4779d4/go.mod h1:oOPeUKvkReCaag5//AtZZCqY0G5u/OS7cP3xemcnYuI=
 github.com/kart-io/goagent-contrib/retrieval v0.4.0 h1:28aL7SC/96sXzZzN3JWLTL+eUNwaHeFP41I41/izWGM=
 github.com/kart-io/goagent-contrib/retrieval v0.4.0/go.mod h1:6H6FlB0pwvkH2Da5mtnHkUGo2kx9DMc3lSIDM76gx/s=
+github.com/kart-io/goagent-contrib/retrieval v0.4.1-0.20261107151427-7637a02d2a30 h1:LHBwA04yEhRG1HWeU08hTEkd/BV3KQRk0mP1EFv+XyQ=
+github.com/kart-io/goagent-contrib/retrieval v0.4.1-0.20261107151427-7637a02d2a30/go.mod h1:DxRhpY/FFntnmU060g/6tmUvlAQ6WksJqZu0aIJVYMM=
 github.com/klauspost/cpuid/v2 v2.2.9 h1:66ze0taIn2H33fBvCkXuv9BmCwDfafmiIVpKV9kKGuY=
 github.com/klauspost/cpuid/v2 v2.2.9/go.mod h1:rqkxqrZ1EhYM9G+hXH7YdowN5R5RGN6NK4QwQ3WMXF8=
 github.com/pb33f/ordered-map/v2 v2.3.1 h1:5319HDO0aw4DA4gzi+zv4FXU9UlSs3xGZ40wcP1nBjY=

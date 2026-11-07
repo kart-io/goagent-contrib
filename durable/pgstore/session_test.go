@@ -13,9 +13,11 @@ import (
 	"github.com/kart-io/goagent/core/durable"
 	"github.com/kart-io/goagent/core/session"
 	"github.com/kart-io/goagent/core/session/sessiontest"
+	agentErrors "github.com/kart-io/goagent/errors"
 	"github.com/kart-io/goagent/interfaces"
 	"github.com/kart-io/goagent/llm"
-	"github.com/kart-io/goagent/llm/constants"
+
+	shared "github.com/kart-io/goagent/constants"
 	"github.com/kart-io/goagent/tools"
 )
 
@@ -66,9 +68,9 @@ func TestSessionSnapshotRequiresLock(t *testing.T) {
 	snap, err := session.NewEvent(session.TypeBoundarySnapshot, session.BoundaryData{ID: "op", Snapshot: []byte(`{}`)})
 	require.NoError(t, err)
 	_, err = s.Append(ctx, "s", 0, msg, snap)
-	require.ErrorIs(t, err, durable.ErrLeaseLost)
+	require.ErrorIs(t, err, agentErrors.ErrLeaseLost)
 	_, err = s.Read(ctx, "s", 0)
-	require.ErrorIs(t, err, session.ErrNotFound)
+	require.ErrorIs(t, err, agentErrors.ErrSessionNotFound)
 
 	unlock, err := s.Lock(ctx, "s", session.DurableLockName("op"))
 	require.NoError(t, err)
@@ -102,7 +104,7 @@ func (m *toolModel) CompleteToolsStream(_ context.Context, req *llm.CompletionRe
 func (*toolModel) CompleteStream(context.Context, *llm.CompletionRequest) (<-chan *llm.StreamChunk, error) {
 	return nil, errors.New("unused")
 }
-func (*toolModel) Provider() constants.Provider { return constants.ProviderCustom }
+func (*toolModel) Provider() shared.Provider { return shared.ProviderCustom }
 
 // Agent 的会话日志与持久快照写入同一个 Postgres 会话：一个实例在工具执行中中断，另一个实例以同一执行键恢复，
 // 只请求剩余的模型回合，日志中只有一轮、消息不重复。

@@ -11,6 +11,7 @@ import (
 
 	"github.com/kart-io/goagent/core/durable"
 	"github.com/kart-io/goagent/core/session"
+	agentErrors "github.com/kart-io/goagent/errors"
 )
 
 // A failure on the second database write must roll back the first write, not
@@ -65,7 +66,7 @@ func TestScopedSaveAllFencingAndIsolation(t *testing.T) {
 		durable.Write{ID: "a", Snapshot: &durable.Snapshot{Version: "new"}},
 		durable.Write{ID: "z", Snapshot: &durable.Snapshot{Version: "new"}},
 	)
-	require.ErrorIs(t, err, durable.ErrLeaseLost)
+	require.ErrorIs(t, err, agentErrors.ErrLeaseLost)
 	for _, id := range []string{"a", "z"} {
 		snap, err := b.Scope("tenant").Load(ctx, id)
 		require.NoError(t, err)
@@ -86,7 +87,7 @@ func TestAppendAllDatabaseRollback(t *testing.T) {
 	require.Error(t, err)
 	for _, id := range []string{"a", "z"} {
 		_, err := s.Read(ctx, id, 0)
-		require.ErrorIs(t, err, session.ErrNotFound)
+		require.ErrorIs(t, err, agentErrors.ErrSessionNotFound)
 	}
 	ids, err := s.List(ctx)
 	require.NoError(t, err)
@@ -101,14 +102,14 @@ func TestAppendAllCompareOnlyAndEncoding(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []int64{0}, lasts)
 	_, err = s.Read(ctx, "empty", 0)
-	require.ErrorIs(t, err, session.ErrNotFound)
+	require.ErrorIs(t, err, agentErrors.ErrSessionNotFound)
 	_, err = s.AppendAll(ctx,
 		session.AppendBatch{ID: "a", Events: []session.Event{{Type: "test", Data: json.RawMessage(`{}`)}}},
 		session.AppendBatch{ID: "z", Events: []session.Event{{Type: "test", Data: json.RawMessage(`{`)}}},
 	)
 	require.Error(t, err)
 	_, err = s.Read(ctx, "a", 0)
-	require.ErrorIs(t, err, session.ErrNotFound)
+	require.ErrorIs(t, err, agentErrors.ErrSessionNotFound)
 }
 
 func TestAppendAllConcurrentReverseOrder(t *testing.T) {
@@ -132,9 +133,9 @@ func TestAppendAllConcurrentReverseOrder(t *testing.T) {
 	close(start)
 	first, second := <-done, <-done
 	if first == nil {
-		require.ErrorIs(t, second, session.ErrConflict)
+		require.ErrorIs(t, second, agentErrors.ErrSessionConflict)
 	} else {
-		require.ErrorIs(t, first, session.ErrConflict)
+		require.ErrorIs(t, first, agentErrors.ErrSessionConflict)
 		require.NoError(t, second)
 	}
 	for _, id := range []string{"a", "z"} {
@@ -165,10 +166,10 @@ func TestAppendAllSnapshotLeaseFencing(t *testing.T) {
 		session.AppendBatch{ID: "a", Events: []session.Event{{Type: "test", Data: json.RawMessage(`{}`)}}},
 		session.AppendBatch{ID: "z", Events: []session.Event{snapshot}},
 	)
-	require.ErrorIs(t, err, durable.ErrLeaseLost)
+	require.ErrorIs(t, err, agentErrors.ErrLeaseLost)
 	for _, id := range []string{"a", "z"} {
 		_, err := b.Read(ctx, id, 0)
-		require.ErrorIs(t, err, session.ErrNotFound)
+		require.ErrorIs(t, err, agentErrors.ErrSessionNotFound)
 	}
 }
 

@@ -1,11 +1,11 @@
 module github.com/kart-io/goagent-contrib/httpagent
 
-go 1.26.0
+go 1.27.0
 
 require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
-	github.com/kart-io/goagent v0.47.0
+	github.com/kart-io/goagent v0.49.3-0.20261107151110-dae60f4779d4
 	github.com/stretchr/testify v1.12.1
 )
 

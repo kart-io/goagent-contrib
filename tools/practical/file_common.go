@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	shared "github.com/kart-io/goagent/constants"
 	agentErrors "github.com/kart-io/goagent/errors"
-	"github.com/kart-io/goagent/interfaces"
 )
 
 // FileToolConfig 文件工具通用配置
@@ -127,7 +127,7 @@ func calculateChecksum(data []byte) string {
 // detectMimeType 检测文件的 MIME 类型
 func detectMimeType(data []byte) string {
 	if len(data) == 0 {
-		return interfaces.ContentTypeOctetStream
+		return shared.ContentTypeOctetStream
 	}
 
 	// 使用标准库检测 MIME 类型（检测前 512 字节）

@@ -8,6 +8,7 @@ import (
 
 	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/kart-io/goagent/core/session"
+	agentErrors "github.com/kart-io/goagent/errors"
 )
 
 // LoadSession 回放会话日志中的对话，再以同一 ID 构建 Agent 续接。
@@ -55,7 +56,7 @@ func (c *conn) LoadSession(ctx context.Context, p acpsdk.LoadSessionRequest) (ac
 		c.mu.Unlock()
 	}
 	events, err := c.srv.store.Read(ctx, id, 0)
-	if errors.Is(err, session.ErrNotFound) {
+	if errors.Is(err, agentErrors.ErrSessionNotFound) {
 		return acpsdk.LoadSessionResponse{}, missing(p.SessionId)
 	}
 	if err != nil {

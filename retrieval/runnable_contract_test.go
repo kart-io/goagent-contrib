@@ -9,10 +9,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	shared "github.com/kart-io/goagent/constants"
 	"github.com/kart-io/goagent/core"
 	"github.com/kart-io/goagent/interfaces"
 	"github.com/kart-io/goagent/llm"
-	"github.com/kart-io/goagent/llm/constants"
 )
 
 type contractVector struct{ interfaces.VectorStore }
@@ -31,7 +31,7 @@ func (*contractModel) CompleteStream(context.Context, *llm.CompletionRequest) (<
 	close(out)
 	return out, nil
 }
-func (*contractModel) Provider() constants.Provider { return constants.ProviderCustom }
+func (*contractModel) Provider() shared.Provider { return shared.ProviderCustom }
 
 func TestConcreteRetrieverRunnableContract(t *testing.T) {
 	ctx := context.Background()

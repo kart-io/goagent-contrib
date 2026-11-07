@@ -5,6 +5,7 @@ import (
 	"fmt"
 	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/kart-io/goagent/core/session"
+	agentErrors "github.com/kart-io/goagent/errors"
 	"github.com/stretchr/testify/require"
 	"path/filepath"
 	"testing"
@@ -71,7 +72,7 @@ type conflictStore struct {
 func (s *conflictStore) Append(ctx context.Context, id string, expected int64, events ...session.Event) (int64, error) {
 	s.attempts++
 	if s.attempts < 3 {
-		return 0, session.ErrConflict
+		return 0, agentErrors.ErrSessionConflict
 	}
 	return s.Store.Append(ctx, id, expected, events...)
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/go-resty/resty/v2"
 
 	"github.com/kart-io/goagent/codec/json"
+	shared "github.com/kart-io/goagent/constants"
 	agentcore "github.com/kart-io/goagent/core"
 	agentErrors "github.com/kart-io/goagent/errors"
 	"github.com/kart-io/goagent/interfaces"
@@ -299,7 +300,7 @@ func (t *WebScraperTool) fetchPage(ctx context.Context, urlStr string) (*goquery
 	// Configure retry mechanism
 	resp, err := t.client.R().
 		SetContext(ctx).
-		SetHeader(interfaces.HeaderUserAgent, t.userAgent).
+		SetHeader(shared.HeaderUserAgent, t.userAgent).
 		Get(urlStr)
 	if err != nil {
 		return nil, agentErrors.RedactURLError(err)
@@ -309,9 +310,9 @@ func (t *WebScraperTool) fetchPage(ctx context.Context, urlStr string) (*goquery
 		return nil, agentErrors.New(agentErrors.CodeToolExecution, "HTTP request failed").
 			WithComponent("web_scraper_tool").
 			WithOperation("fetchPage").
-			WithContext(interfaces.FieldURL, agentErrors.RedactURL(urlStr)).
-			WithContext(interfaces.FieldStatusCode, resp.StatusCode()).
-			WithContext(interfaces.FieldStatus, resp.Status())
+			WithContext(shared.FieldURL, agentErrors.RedactURL(urlStr)).
+			WithContext(shared.FieldStatusCode, resp.StatusCode()).
+			WithContext(shared.FieldStatus, resp.Status())
 	}
 
 	return goquery.NewDocumentFromReader(strings.NewReader(resp.String()))

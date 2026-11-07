@@ -15,7 +15,8 @@ import (
 	"github.com/kart-io/goagent/core/session"
 	"github.com/kart-io/goagent/interfaces"
 	"github.com/kart-io/goagent/llm"
-	"github.com/kart-io/goagent/llm/constants"
+
+	shared "github.com/kart-io/goagent/constants"
 	"github.com/kart-io/goagent/tools"
 	"github.com/stretchr/testify/require"
 )
@@ -273,7 +274,7 @@ func newModel(turns ...turn) *scriptModel {
 	return &scriptModel{turns: turns, started: make(chan struct{}, 16)}
 }
 
-func (m *scriptModel) Provider() constants.Provider { return constants.ProviderCustom }
+func (m *scriptModel) Provider() shared.Provider { return shared.ProviderCustom }
 func (m *scriptModel) CompleteStream(ctx context.Context, req *llm.CompletionRequest) (<-chan *llm.StreamChunk, error) {
 	return m.CompleteToolsStream(ctx, req, nil)
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kart-io/goagent/core/durable"
+	agentErrors "github.com/kart-io/goagent/errors"
 )
 
 // TestImportFileStore：FileStore 上停在审批等待、并含一条已完成持久操作的运行，导入后在 pgstore 上续跑，已完成的工作只回放。
@@ -35,7 +36,7 @@ func TestImportFileStore(t *testing.T) {
 		}},
 	}
 	snap, err := (&durable.Runner{Store: files, Version: "v1", Steps: steps}).Run(ctx, "order", json.RawMessage(`{}`), "")
-	require.ErrorIs(t, err, durable.ErrApprovalRequired)
+	require.ErrorIs(t, err, agentErrors.ErrApprovalRequired)
 	approvalKey := snap.Key
 	// 作用域数据不导入。
 	unlock, err := files.Scope("evidence").Lock(ctx, "e")

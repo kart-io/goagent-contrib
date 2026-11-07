@@ -18,6 +18,7 @@ import (
 
 	"github.com/kart-io/goagent/core/durable"
 	"github.com/kart-io/goagent/core/durable/storetest"
+	agentErrors "github.com/kart-io/goagent/errors"
 )
 
 // 需要一个可写的 Postgres：GOAGENT_PGSTORE_DSN=postgres://postgres:test@127.0.0.1:55432/postgres?sslmode=disable
@@ -176,7 +177,7 @@ func TestProcessCrashTakeover(t *testing.T) {
 		s := newStore(t, dsn, schema)
 		runner := &durable.Runner{Store: s, Version: "v1", Steps: crashSteps(nil)}
 		_, err := runner.Run(context.Background(), "order", json.RawMessage(`{}`), "")
-		require.ErrorIs(t, err, durable.ErrApprovalRequired)
+		require.ErrorIs(t, err, agentErrors.ErrApprovalRequired)
 		_, err = s.Lock(context.Background(), "order")
 		require.NoError(t, err)
 		os.Exit(3)

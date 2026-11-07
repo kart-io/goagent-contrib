@@ -4,7 +4,7 @@ go 1.27.0
 
 require (
 	github.com/go-sql-driver/mysql v1.9.3
-	github.com/kart-io/goagent v0.49.2
+	github.com/kart-io/goagent v0.49.3-0.20261107151110-dae60f4779d4
 	github.com/lib/pq v1.10.9
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/stretchr/testify v1.12.1

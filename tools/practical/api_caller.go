@@ -8,6 +8,7 @@ import (
 	"github.com/go-resty/resty/v2"
 
 	"github.com/kart-io/goagent/codec/json"
+	shared "github.com/kart-io/goagent/constants"
 	agentcore "github.com/kart-io/goagent/core"
 	agentErrors "github.com/kart-io/goagent/errors"
 	"github.com/kart-io/goagent/interfaces"
@@ -77,8 +78,8 @@ func (t *APICallerTool) ArgsSchema() string {
 			},
 			"method": map[string]interface{}{
 				"type":        "string",
-				"enum":        []string{interfaces.MethodGet, interfaces.MethodPost, interfaces.MethodPut, interfaces.MethodDelete, interfaces.MethodPatch},
-				"default":     interfaces.MethodGet,
+				"enum":        []string{shared.MethodGet, shared.MethodPost, shared.MethodPut, shared.MethodDelete, shared.MethodPatch},
+				"default":     shared.MethodGet,
 				"description": "HTTP method",
 			},
 			"headers": map[string]interface{}{
@@ -169,7 +170,7 @@ func (t *APICallerTool) execute(ctx context.Context, params *apiParams) (*interf
 	}
 
 	// Check cache for GET requests
-	if params.Method == interfaces.MethodGet && params.Cache {
+	if params.Method == shared.MethodGet && params.Cache {
 		cacheKey := t.getCacheKey(params)
 		if cached := t.responseCache.Get(cacheKey); cached != nil {
 			result := cached.(map[string]interface{})
@@ -201,7 +202,7 @@ func (t *APICallerTool) execute(ctx context.Context, params *apiParams) (*interf
 	response["cached"] = false
 
 	// Cache successful GET responses
-	if params.Method == interfaces.MethodGet && params.Cache {
+	if params.Method == shared.MethodGet && params.Cache {
 		cacheKey := t.getCacheKey(params)
 		t.responseCache.Set(cacheKey, response)
 	}
@@ -336,21 +337,21 @@ func (t *APICallerTool) executeRequest(ctx context.Context, params *apiParams) (
 	// Set body if provided
 	if params.Body != nil {
 		req.SetBody(params.Body)
-		if req.Header.Get(interfaces.HeaderContentType) == "" {
-			req.SetHeader(interfaces.HeaderContentType, interfaces.ContentTypeJSON)
+		if req.Header.Get(shared.HeaderContentType) == "" {
+			req.SetHeader(shared.HeaderContentType, shared.ContentTypeJSON)
 		}
 	}
 
 	switch params.Method {
-	case interfaces.MethodGet:
+	case shared.MethodGet:
 		resp, err = req.Get(fullURL)
-	case interfaces.MethodPost:
+	case shared.MethodPost:
 		resp, err = req.Post(fullURL)
-	case interfaces.MethodPut:
+	case shared.MethodPut:
 		resp, err = req.Put(fullURL)
-	case interfaces.MethodDelete:
+	case shared.MethodDelete:
 		resp, err = req.Delete(fullURL)
-	case interfaces.MethodPatch:
+	case shared.MethodPatch:
 		resp, err = req.Patch(fullURL)
 	default:
 		return nil, agentErrors.New(agentErrors.CodeInvalidInput, "unsupported HTTP method").
@@ -495,7 +496,7 @@ func (t *APICallerTool) parseAPIInput(input interface{}) (*apiParams, error) {
 	case string:
 		// Simple GET request
 		params.URL = v
-		params.Method = interfaces.MethodGet
+		params.Method = shared.MethodGet
 	case map[string]interface{}:
 		data, err := json.Marshal(v)
 		if err != nil {
@@ -513,7 +514,7 @@ func (t *APICallerTool) parseAPIInput(input interface{}) (*apiParams, error) {
 
 	// Set defaults
 	if params.Method == "" {
-		params.Method = interfaces.MethodGet
+		params.Method = shared.MethodGet
 	}
 	if params.Timeout == 0 {
 		params.Timeout = 30

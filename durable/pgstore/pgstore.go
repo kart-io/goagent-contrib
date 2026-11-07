@@ -29,6 +29,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/kart-io/goagent/core/durable"
+	agentErrors "github.com/kart-io/goagent/errors"
 )
 
 // ErrClosed 表示 Store 已关闭，不再接受新的 Lock。
@@ -145,7 +146,7 @@ func (s *Store) opContext() (context.Context, context.CancelFunc) {
 }
 
 func lockUnavailable(ctx context.Context) error {
-	return fmt.Errorf("%w: %w", durable.ErrLockUnavailable, ctx.Err())
+	return fmt.Errorf("%w: %w", agentErrors.ErrLockUnavailable, ctx.Err())
 }
 
 // Lock 实现 durable.Store。
@@ -221,7 +222,7 @@ func (s *Store) acquire(ctx context.Context, ns, id string) (func() error, error
 		token := crand.Text()
 		ok, err := s.tryAcquire(ns, id, token)
 		if err != nil {
-			if !errors.Is(err, durable.ErrScopeRemoved) {
+			if !errors.Is(err, agentErrors.ErrScopeRemoved) {
 				// 提交结果不确定时租约可能已写入，按自己的令牌删除，避免留下无人持有的租约。
 				s.deleteLease(ns, id, token)
 			}
@@ -257,7 +258,7 @@ func (s *Store) tryAcquire(ns, id, token string) (bool, error) {
 		return false, err
 	}
 	if removed {
-		return false, durable.ErrScopeRemoved
+		return false, agentErrors.ErrScopeRemoved
 	}
 	if busy {
 		return false, nil
@@ -294,7 +295,7 @@ func checkScope(ctx context.Context, tx pgx.Tx, ns string) error {
 	var removed bool
 	err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM goagent_durable_scope WHERE ns = $1)`, ns).Scan(&removed)
 	if err == nil && removed {
-		err = durable.ErrScopeRemoved
+		err = agentErrors.ErrScopeRemoved
 	}
 	return err
 }
@@ -334,7 +335,7 @@ func (s *Store) load(ctx context.Context, ns, id string) (*durable.Snapshot, err
 		return nil, err
 	}
 	if removed {
-		return nil, durable.ErrScopeRemoved
+		return nil, agentErrors.ErrScopeRemoved
 	}
 	if data == nil {
 		return nil, fmt.Errorf("持久快照 %q 不存在：%w", id, os.ErrNotExist)
@@ -368,7 +369,7 @@ func (s *Store) saveAll(ctx context.Context, ns string, writes []durable.Write) 
 		h := s.owners[key(ns, write.ID)]
 		s.mu.Unlock()
 		if h == nil {
-			return fmt.Errorf("%w：本进程未持有 %q 的锁", durable.ErrLeaseLost, write.ID)
+			return fmt.Errorf("%w：本进程未持有 %q 的锁", agentErrors.ErrLeaseLost, write.ID)
 		}
 		data, err := json.Marshal(write.Snapshot)
 		if err != nil {
@@ -399,7 +400,7 @@ ON CONFLICT (ns, id) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.u
 				return err
 			}
 			if tag.RowsAffected() == 0 {
-				return fmt.Errorf("%w：%q", durable.ErrLeaseLost, r.id)
+				return fmt.Errorf("%w：%q", agentErrors.ErrLeaseLost, r.id)
 			}
 		}
 		return nil

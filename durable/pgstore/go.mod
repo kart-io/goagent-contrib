@@ -1,10 +1,10 @@
 module github.com/kart-io/goagent-contrib/durable/pgstore
 
-go 1.26.0
+go 1.27.0
 
 require (
 	github.com/jackc/pgx/v5 v5.10.0
-	github.com/kart-io/goagent v0.47.0
+	github.com/kart-io/goagent v0.49.3-0.20261107151110-dae60f4779d4
 	github.com/stretchr/testify v1.12.1
 )
 

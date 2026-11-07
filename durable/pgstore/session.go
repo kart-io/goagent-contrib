@@ -11,8 +11,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/kart-io/goagent/core/durable"
 	"github.com/kart-io/goagent/core/session"
+	agentErrors "github.com/kart-io/goagent/errors"
 )
 
 // SessionStore 实现 session.Store，供多个实例共享会话日志；与创建它的 Store 共享连接池、租约与续约，
@@ -87,7 +87,7 @@ func (s *SessionStore) fences(id string, events []session.Event) ([]*hold, error
 		h := s.root.owners[key(sessionNS(id), name)]
 		s.root.mu.Unlock()
 		if h == nil {
-			return nil, fmt.Errorf("%w：本进程未持有会话 %q 中 %q 的锁", durable.ErrLeaseLost, id, name)
+			return nil, fmt.Errorf("%w：本进程未持有会话 %q 中 %q 的锁", agentErrors.ErrLeaseLost, id, name)
 		}
 		holds = append(holds, h)
 	}
@@ -107,7 +107,7 @@ func lastSeq(ctx context.Context, q interface {
 }
 
 func conflict(expected, cur int64) error {
-	return fmt.Errorf("%w：期望序号 %d，当前 %d", session.ErrConflict, expected, cur)
+	return fmt.Errorf("%w：期望序号 %d，当前 %d", agentErrors.ErrSessionConflict, expected, cur)
 }
 
 // Append 实现 session.Store。事件按原样的 JSON 存为 bytea：jsonb 会改写 Data 的键序与数字写法。
@@ -177,7 +177,7 @@ WHERE ns = $1 AND id = $2 AND token = $3`, h.ns, h.id, h.token, ttl.Milliseconds
 			return err
 		}
 		if tag.RowsAffected() == 0 {
-			return fmt.Errorf("%w：会话 %q 中 %q", durable.ErrLeaseLost, p.id, h.id)
+			return fmt.Errorf("%w：会话 %q 中 %q", agentErrors.ErrLeaseLost, p.id, h.id)
 		}
 	}
 	if len(p.seqs) == 0 {
@@ -274,7 +274,7 @@ func (s *SessionStore) Read(ctx context.Context, id string, after int64) ([]sess
 			return nil, err
 		}
 		if !exists {
-			return nil, session.ErrNotFound
+			return nil, agentErrors.ErrSessionNotFound
 		}
 	}
 	events := make([]session.Event, len(raws))
@@ -304,7 +304,7 @@ func (s *SessionStore) Fork(ctx context.Context, src, dst string, upTo int64) er
 		var last int64
 		err := tx.QueryRow(ctx, `SELECT last_seq FROM goagent_session WHERE id = $1 FOR SHARE`, src).Scan(&last)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return session.ErrNotFound
+			return agentErrors.ErrSessionNotFound
 		}
 		if err != nil {
 			return err
@@ -317,7 +317,7 @@ func (s *SessionStore) Fork(ctx context.Context, src, dst string, upTo int64) er
 			return err
 		}
 		if tag.RowsAffected() == 0 {
-			return session.ErrExists
+			return agentErrors.ErrSessionExists
 		}
 		_, err = tx.Exec(ctx, `INSERT INTO goagent_session_event (session_id, seq, type, event)
 SELECT $1, seq, type, event FROM goagent_session_event WHERE session_id = $2 AND seq <= $3`, dst, src, last)

@@ -12,6 +12,7 @@ import (
 
 	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/kart-io/goagent/core/session"
+	agentErrors "github.com/kart-io/goagent/errors"
 )
 
 const metadataType = "acp/session_metadata"
@@ -35,11 +36,11 @@ func appendMetadata(ctx context.Context, store session.Store, id string, meta se
 	}
 	for attempt := 0; attempt < 3; attempt++ {
 		events, readErr := store.Read(ctx, id, 0)
-		if readErr != nil && !errors.Is(readErr, session.ErrNotFound) {
+		if readErr != nil && !errors.Is(readErr, agentErrors.ErrSessionNotFound) {
 			return readErr
 		}
 		_, err = store.Append(ctx, id, session.LastSeq(events), ev)
-		if !errors.Is(err, session.ErrConflict) {
+		if !errors.Is(err, agentErrors.ErrSessionConflict) {
 			return err
 		}
 	}

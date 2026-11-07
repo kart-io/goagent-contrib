@@ -55,6 +55,8 @@ github.com/invopop/jsonschema v0.14.0 h1:MHQqLhvpNUZfw+hM3AZDYK7jxO8FZoQeQM77g8i
 github.com/invopop/jsonschema v0.14.0/go.mod h1:ygm6C2EaVNMBDPpaPlnOA2pFAxBnxGjFlMZABxm9n2I=
 github.com/kart-io/goagent v0.49.2 h1:HW+2kbPFPg1AytnbwtyRZ7VlAuqYFUsRk0kofXFZpjY=
 github.com/kart-io/goagent v0.49.2/go.mod h1:oOPeUKvkReCaag5//AtZZCqY0G5u/OS7cP3xemcnYuI=
+github.com/kart-io/goagent v0.49.3-0.20261107151110-dae60f4779d4 h1:xB7C1S4ZonTq39Kpl2wQ5W3Obn/Bbm26XBAMPQJN5/8=
+github.com/kart-io/goagent v0.49.3-0.20261107151110-dae60f4779d4/go.mod h1:oOPeUKvkReCaag5//AtZZCqY0G5u/OS7cP3xemcnYuI=
 github.com/kart-io/logger v0.2.2 h1:YLTNkqR4nL5z1nvPbmSfhY3WvodVIYwFoml+JWgvNl8=
 github.com/kart-io/logger v0.2.2/go.mod h1:FslDvmiuObMHG/DRSpqT+gYJrviu4ieEW7ytRyj0Ack=
 github.com/kr/pretty v0.3.1 h1:flRD4NNwYAUpkphVc1HcthR4KEIFJ65n8Mw5qdRn3LE=

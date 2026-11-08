@@ -186,10 +186,11 @@ func (s *Service) History(ctx context.Context, a Actor, r HistoryRequest) (Histo
 }
 
 type Run struct {
-	Task     Task                      `json:"task"`
-	Attempts []Attempt                 `json:"attempts"`
-	Usage    *budget.AttributionReport `json:"usage"`
-	Complete bool                      `json:"complete"`
+	Task        Task                      `json:"task"`
+	Attempts    []Attempt                 `json:"attempts"`
+	Usage       *budget.AttributionReport `json:"usage"`
+	Complete    bool                      `json:"complete"`
+	UsageStatus string                    `json:"usage_status"`
 }
 
 func (s *Service) GetRun(ctx context.Context, a Actor, id string) (Run, error) {
@@ -206,15 +207,11 @@ func (s *Service) GetRun(ctx context.Context, a Actor, id string) (Run, error) {
 		return Run{}, err
 	}
 	out := Run{Task: t, Attempts: attempts}
-	c, err := budget.NewDurable(t.Budget, session.DurableStore(s.cfg.Sessions, se.LogID))
+	out.Usage, out.UsageStatus, err = readUsage(ctx, t.Budget, session.DurableStore(s.cfg.Sessions, se.LogID))
 	if err != nil {
 		return out, err
 	}
-	report, err := c.Attribution(ctx)
-	if err == nil {
-		out.Usage = &report
-		out.Complete = report.Complete
-	}
+	out.Complete = out.Usage != nil && out.Usage.Complete
 	return out, nil
 }
 func (s *Service) ListRuns(ctx context.Context, a Actor, q Query) (Page[Run], error) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/kart-io/goagent/core/budget"
+	"github.com/kart-io/goagent/core/durable"
 	"time"
 )
 
@@ -187,6 +188,7 @@ func (s *Service) ResumeTask(ctx context.Context, a Actor, r ResumeTaskRequest) 
 		return Command{}, err
 	}
 	return mutate(s, ctx, a, r.IdempotencyKey, "task.resume/"+r.TaskID, r, func(tx Tx) (Command, error) {
+		var reconciliationHash string
 		t, e := read[Task](ctx, tx, "tasks", a.TenantID, r.TaskID)
 		if e != nil {
 			return Command{}, e
@@ -209,9 +211,16 @@ func (s *Service) ResumeTask(ctx context.Context, a Actor, r ResumeTaskRequest) 
 			if e != nil {
 				return Command{}, e
 			}
+			if !v.Capabilities.Reconcile {
+				return Command{}, ErrUnsupported
+			}
 			if rec.TenantID != a.TenantID || rec.TaskID != t.ID || rec.VersionHash != v.ConfigHash || rec.EvidenceHash == "" || rec.VerifiedBy == "" || (rec.Resolution != "applied" && rec.Resolution != "not_applied") {
 				return Command{}, ErrConflict
 			}
+			if !sameOperations(t.Operations, rec.OperationRefs) || rec.VerifiedAt.IsZero() {
+				return Command{}, ErrConflict
+			}
+			reconciliationHash = rec.EvidenceHash
 		} else {
 			found := false
 			for _, w := range t.Waits {
@@ -227,9 +236,31 @@ func (s *Service) ResumeTask(ctx context.Context, a Actor, r ResumeTaskRequest) 
 			}
 		}
 		c := Command{Meta: s.meta(a), TaskID: t.ID, SessionID: t.SessionID, Kind: "resume", State: "pending", Actor: a, WaitID: r.WaitID, Input: r.Input, AvailableAt: s.cfg.Now().UTC()}
+		c.ReconciliationRef = r.ReconciliationRef
+		c.ReconciliationHash = reconciliationHash
 		if e = insert(ctx, tx, "commands", c); e != nil {
 			return c, e
 		}
 		return c, s.audit(ctx, tx, a, "tasks", t.ID, "resume", r.ReconciliationRef)
 	})
+}
+
+func sameOperations(a, b []durable.OperationRef) bool {
+	if len(a) == 0 || len(a) != len(b) {
+		return false
+	}
+	set := map[durable.OperationRef]int{}
+	for _, ref := range a {
+		if ref.ParentKey == "" || ref.ID == "" {
+			return false
+		}
+		set[ref]++
+	}
+	for _, ref := range b {
+		if set[ref] == 0 {
+			return false
+		}
+		set[ref]--
+	}
+	return true
 }

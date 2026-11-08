@@ -9,6 +9,7 @@ import (
 	"fmt"
 	mg "github.com/kart-io/goagent-contrib/management"
 	"github.com/kart-io/goagent/builder"
+	"github.com/kart-io/goagent/core/budget"
 	"github.com/kart-io/goagent/core/durable"
 	"github.com/kart-io/goagent/core/session"
 	"github.com/kart-io/goagent/tools"
@@ -121,6 +122,17 @@ func (n *native) Inspect(ctx context.Context, spec mg.RunSpec) (mg.RunEvidence, 
 	if !completed {
 		return mg.RunEvidence{State: "absent"}, nil
 	}
+	// 计量配置属于模型操作意图。保持同一配置，但把回放中的计量补记限制在内存副本。
+	copyLog := session.NewMemoryStore()
+	if _, err = copyLog.Append(ctx, n.r.Session.LogID, 0, events...); err != nil {
+		return mg.RunEvidence{}, err
+	}
+	journal := session.DurableStore(copyLog, n.r.Session.LogID)
+	controller, err := budget.NewDurable(spec.Task.Budget, journal)
+	if err != nil {
+		return mg.RunEvidence{}, err
+	}
+	ctx = budget.WithController(durable.WithJournal(ctx, journal), controller)
 	result, err := n.Run(durable.WithReplayOnly(ctx), mg.RunSpec{Task: spec.Task})
 	if err != nil {
 		return mg.RunEvidence{}, err

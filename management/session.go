@@ -112,7 +112,7 @@ func prefixEvents(events []session.Event, seq int64) []session.Event {
 	}
 	return out
 }
-func (s *Service) applySession(ctx context.Context, c Command) error {
+func (s *Service) applySession(ctx context.Context, c Command) (err error) {
 	se, err := read[Session](ctx, s.cfg.Store, "sessions", c.TenantID, c.SessionID)
 	if err != nil {
 		return err
@@ -147,7 +147,7 @@ func (s *Service) applySession(ctx context.Context, c Command) error {
 		if e != nil {
 			return e
 		}
-		defer unlock()
+		defer func() { err = errors.Join(err, unlock()) }()
 		source, e = read[Session](ctx, s.cfg.Store, "sessions", c.TenantID, se.ParentID)
 		if e != nil {
 			return e

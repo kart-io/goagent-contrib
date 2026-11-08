@@ -44,7 +44,7 @@ func (g *graph[T]) result(snap *workflow.GraphSnapshot[T]) (mg.RunResult, error)
 		for _, p := range snap.Interrupts {
 			info := p.Info
 			intent := hash(info)
-			out.Waits = append(out.Waits, mg.WaitPoint{ID: hash([]byte(p.Key)), Kind: "input", Key: p.Key, InterruptID: p.ID, IntentHash: intent, Info: info})
+			out.Waits = append(out.Waits, mg.WaitPoint{ID: hash([]byte(p.Key)), Kind: "input", Key: p.Key, InterruptID: p.ID, IntentHash: intent, Info: info, Rejected: p.Rejected, Reason: p.Reason})
 		}
 	} else {
 		info, _ := json.Marshal(map[string]any{"node": snap.Node})
@@ -64,9 +64,17 @@ func (g *graph[T]) Run(ctx context.Context, spec mg.RunSpec) (mg.RunResult, erro
 	}
 	if saved != nil && saved.Waiting {
 		input, key := "", ""
-		for k, v := range spec.ResumeInputs {
-			key, input = k, v
-			break
+		if len(saved.Interrupts) == 0 {
+			if v, ok := spec.ResumeInputs[saved.Key]; ok {
+				key, input = saved.Key, v
+			}
+		} else {
+			for _, point := range saved.Interrupts {
+				if v, ok := spec.ResumeInputs[point.Key]; ok {
+					key, input = point.Key, v
+					break
+				}
+			}
 		}
 		if key != "" {
 			if len(saved.Interrupts) == 0 {
@@ -88,6 +96,21 @@ func (g *graph[T]) Run(ctx context.Context, spec mg.RunSpec) (mg.RunResult, erro
 		}
 	} else {
 		snap, err = g.g.Run(ctx, spec.Task.RunID, initial, "")
+	}
+	var rejected *workflow.ResumeRejectedError
+	if errors.As(err, &rejected) {
+		current, e := g.g.Snapshot(ctx, spec.Task.RunID)
+		if e != nil {
+			return mg.RunResult{}, e
+		}
+		result, e := g.result(current)
+		for i := range result.Waits {
+			result.Waits[i].Rejected = true
+			if result.Waits[i].Reason == "" {
+				result.Waits[i].Reason = "validation_rejected"
+			}
+		}
+		return result, e
 	}
 	if err != nil && !errors.Is(err, agentErrors.ErrApprovalRequired) {
 		return mg.RunResult{}, err

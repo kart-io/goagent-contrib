@@ -8,6 +8,7 @@ import (
 	mg "github.com/kart-io/goagent-contrib/management"
 	"github.com/kart-io/goagent-contrib/management/adapters"
 	"github.com/kart-io/goagent/builder"
+	coreSession "github.com/kart-io/goagent/core/session"
 	"github.com/kart-io/goagent/interfaces"
 	"github.com/kart-io/goagent/llm"
 	"github.com/kart-io/goagent/tools"
@@ -61,12 +62,98 @@ func TestRecoveryChild(t *testing.T) {
 	}
 	f := setup(t, nil)
 	cfg := f.cfg
+	if os.Getenv("MG_CRASH_AFTER_FORK") == "1" {
+		cfg.Sessions = crashForkStore{cfg.Sessions}
+	}
 	cfg.Factories = map[string]mg.Factory{"test": processFactory(f.pool, tenant)}
 	s, e := mg.New(cfg)
 	require.NoError(t, e)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	require.NoError(t, mg.NewWorker(s).Run(ctx))
+}
+
+type crashForkStore struct{ coreSession.Store }
+
+func (s crashForkStore) Fork(ctx context.Context, src, dst string, seq int64) error {
+	if e := s.Store.Fork(ctx, src, dst, seq); e != nil {
+		return e
+	}
+	os.Exit(42)
+	return nil
+}
+
+func TestForkCrashAfterLogCopy(t *testing.T) {
+	f := setup(t, nil)
+	a, _ := f.agent(t)
+	se, e := f.s.CreateSession(f.ctx, f.actor, mg.CreateSessionRequest{IdempotencyKey: uuid.NewString(), AgentID: a.ID})
+	require.NoError(t, e)
+	binary, e := os.Executable()
+	require.NoError(t, e)
+	start := func(crash bool) *exec.Cmd {
+		cmd := exec.Command(binary, "-test.run=^TestRecoveryChild$", "-test.timeout=40s")
+		flag := ""
+		if crash {
+			flag = "1"
+		}
+		cmd.Env = append(os.Environ(), "MG_RECOVERY_TENANT="+f.actor.TenantID, "MG_RECOVERY_SCHEMA="+f.schema, "MG_CRASH_AFTER_FORK="+flag)
+		require.NoError(t, cmd.Start())
+		t.Cleanup(func() {
+			if cmd.ProcessState == nil {
+				_ = cmd.Process.Kill()
+				_ = cmd.Wait()
+			}
+		})
+		return cmd
+	}
+	first := start(false)
+	require.Eventually(t, func() bool {
+		v, e := f.s.GetSession(f.ctx, f.actor, se.ID)
+		se = v
+		return e == nil && se.Status == "ready"
+	}, 8*time.Second, 20*time.Millisecond)
+	require.NoError(t, first.Process.Signal(os.Interrupt))
+	require.NoError(t, first.Wait())
+	startEvent, e := coreSession.NewEvent("turn/start", coreSession.TurnStart{Input: "导入会话", ExecutionKey: "imported-turn"})
+	require.NoError(t, e)
+	endEvent, e := coreSession.NewEvent("turn/end", coreSession.TurnEnd{Answer: "已完成"})
+	require.NoError(t, e)
+	events, e := f.cfg.Sessions.Read(f.ctx, se.LogID, 0)
+	require.NoError(t, e)
+	_, e = f.cfg.Sessions.Append(f.ctx, se.LogID, coreSession.LastSeq(events), startEvent, endEvent)
+	require.NoError(t, e)
+	branch, e := f.s.ForkSession(f.ctx, f.actor, mg.ForkSessionRequest{IdempotencyKey: uuid.NewString(), SessionID: se.ID, ExpectedRevision: se.Revision})
+	require.NoError(t, e)
+	crashed := start(true)
+	require.Error(t, crashed.Wait())
+	require.Equal(t, 42, crashed.ProcessState.ExitCode())
+	status, e := f.s.GetSession(f.ctx, f.actor, branch.ID)
+	require.NoError(t, e)
+	require.Equal(t, "preparing", status.Status)
+	copied, e := f.cfg.Sessions.Read(f.ctx, branch.LogID, 0)
+	require.NoError(t, e)
+	require.NotEmpty(t, copied)
+	cfg := f.cfg
+	cfg.ConfirmWorkerStopped = func(context.Context, string, int64) error {
+		if crashed.ProcessState == nil {
+			return mg.ErrBusy
+		}
+		return nil
+	}
+	f.s, e = mg.New(cfg)
+	require.NoError(t, e)
+	doc, e := f.store.Get(f.ctx, "workers", "__system", "default")
+	require.NoError(t, e)
+	var owner mg.WorkerOwner
+	require.NoError(t, json.Unmarshal(doc.Data, &owner))
+	require.NoError(t, f.s.RecoverWorkerSlot(f.ctx, f.actor, owner.OwnerID, owner.Generation, "Fork复制完成后旧进程已经退出"))
+	next := start(false)
+	require.Eventually(t, func() bool { v, e := f.s.GetSession(f.ctx, f.actor, branch.ID); return e == nil && v.Status == "ready" }, 12*time.Second, 20*time.Millisecond)
+	require.NoError(t, next.Process.Signal(os.Interrupt))
+	require.NoError(t, next.Wait())
+	after, e := f.cfg.Sessions.Read(f.ctx, branch.LogID, 0)
+	require.NoError(t, e)
+	require.Equal(t, copied, after)
 }
 func TestApprovalSurvivesProcessKillAndRestart(t *testing.T) {
 	f := setup(t, nil)

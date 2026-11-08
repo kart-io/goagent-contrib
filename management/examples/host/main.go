@@ -95,7 +95,7 @@ func main() {
 		os.Exit(1)
 	}
 }
-func run() error {
+func run() (runErr error) {
 	address := flag.String("listen", "127.0.0.1:8097", "管理 HTTP 监听地址")
 	migrate := flag.Bool("migrate", false, "显式初始化案例数据库表")
 	verify := flag.Bool("verify", false, "通过 HTTP 验证完整案例后退出")
@@ -144,7 +144,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	defer j.Close(context.Background())
+	defer func() { runErr = errors.Join(runErr, j.Close(context.Background())) }()
 	sessions, err := journal.NewSessionStore(ctx, j)
 	if err != nil {
 		return err
@@ -230,7 +230,7 @@ func (c client) call(ctx context.Context, method, path string, value any, key st
 	if err != nil {
 		return err
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	if res.StatusCode >= 300 {
 		raw, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
 		return fmt.Errorf("HTTP %d：%s", res.StatusCode, raw)

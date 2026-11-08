@@ -77,7 +77,7 @@ func public(v any) (any, error) {
 	clean = func(v any) {
 		switch x := v.(type) {
 		case map[string]any:
-			for _, key := range []string{"execution_key", "key", "interrupt_id", "log_id", "source_hash", "input_hash"} {
+			for _, key := range []string{"execution_key", "key", "interrupt_id", "log_id", "source_hash", "input_hash", "operations"} {
 				delete(x, key)
 			}
 			// 只投影管理结构，业务 input/result/config/data 的同名字段必须原样保留。
@@ -187,7 +187,8 @@ func post[T any](h *Handler, pattern string, status int, call func(context.Conte
 		}
 		_ = json.Unmarshal(raw, &meta)
 		if meta.ID != "" {
-			if status == 202 {
+			switch status {
+			case 202:
 				if strings.HasSuffix(pattern, "/resume") {
 					w.Header().Set("Location", "/v1/commands/"+meta.ID)
 				} else {
@@ -196,7 +197,7 @@ func post[T any](h *Handler, pattern string, status int, call func(context.Conte
 						w.Header().Set("Location", "/v1/sessions/"+meta.ID)
 					}
 				}
-			} else if status == 201 {
+			case 201:
 				w.Header().Set("Location", strings.TrimSuffix(r.URL.Path, "/")+"/"+meta.ID)
 			}
 		}

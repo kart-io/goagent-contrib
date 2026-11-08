@@ -84,7 +84,13 @@ func (w *Worker) owner(ctx context.Context, release bool) error {
 	})
 }
 func (s *Service) RecoverWorkerSlot(ctx context.Context, a Actor, owner string, generation int64, reason string) error {
-	if err := s.auth(ctx, a, "worker.recover", "workers", "default"); err != nil {
+	return s.recoverSlot(ctx, a, "default", owner, generation, reason)
+}
+func (s *Service) RecoverOutboxSlot(ctx context.Context, a Actor, owner string, generation int64, reason string) error {
+	return s.recoverSlot(ctx, a, "outbox", owner, generation, reason)
+}
+func (s *Service) recoverSlot(ctx context.Context, a Actor, slot, owner string, generation int64, reason string) error {
+	if err := s.auth(ctx, a, "worker.recover", "workers", slot); err != nil {
 		return err
 	}
 	if !validText(reason, 1024) || owner == "" {
@@ -97,7 +103,7 @@ func (s *Service) RecoverWorkerSlot(ctx context.Context, a Actor, owner string, 
 		return err
 	}
 	return s.cfg.Store.WithinTx(ctx, func(tx Tx) error {
-		o, e := read[WorkerOwner](ctx, tx, "workers", "__system", "default")
+		o, e := read[WorkerOwner](ctx, tx, "workers", "__system", slot)
 		if e != nil {
 			return e
 		}
@@ -110,7 +116,7 @@ func (s *Service) RecoverWorkerSlot(ctx context.Context, a Actor, owner string, 
 		if e = update(ctx, tx, "workers", o, old); e != nil {
 			return e
 		}
-		return s.audit(ctx, tx, a, "workers", "default", "recover", reason)
+		return s.audit(ctx, tx, a, "workers", slot, "recover", reason)
 	})
 }
 func (w *Worker) Run(parent context.Context) (runErr error) {
@@ -330,7 +336,7 @@ func (w *Worker) start(ctx context.Context, c Command) error {
 					return e
 				}
 			}
-			found := c.WaitID == "" && task.State == Attention
+			found := c.WaitID == "" && c.ReconciliationRef != "" && (task.State == Attention || task.RecoveryNeeded)
 			for _, point := range task.Waits {
 				if point.ID != c.WaitID {
 					continue
@@ -436,13 +442,13 @@ func loadOutcome(ctx context.Context, j durable.Store, t Task, versionHash strin
 	}
 	return envelope.Result, nil
 }
-func saveOutcome(ctx context.Context, j durable.Store, t Task, v Version, result RunResult) error {
+func saveOutcome(ctx context.Context, j durable.Store, t Task, v Version, result RunResult) (err error) {
 	id := outcomeID(t)
 	unlock, e := j.Lock(ctx, id)
 	if e != nil {
 		return e
 	}
-	defer unlock()
+	defer func() { err = errors.Join(err, unlock()) }()
 	raw, e := encode(struct {
 		TaskID, VersionHash, InputHash string
 		Result                         RunResult
@@ -467,13 +473,15 @@ func (w *Worker) execute(ctx, parent context.Context, c Command, t Task, se Sess
 			w.report("finish", e)
 		}
 	}()
-	unlock, err := w.s.cfg.Sessions.Lock(ctx, se.LogID, "management/execution")
+	inspectionCtx, inspectionCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer inspectionCancel()
+	unlock, err := w.s.cfg.Sessions.Lock(inspectionCtx, se.LogID, "management/execution")
 	if err != nil {
 		runErr = err
 		return
 	}
-	defer unlock()
-	cached, err := loadOutcome(ctx, j, t, v.ConfigHash)
+	defer func() { w.report("session_unlock", unlock()) }()
+	cached, err := loadOutcome(inspectionCtx, j, t, v.ConfigHash)
 	if err == nil && (cached.Outcome == "completed" || cached.Outcome == "failed" || cached.Outcome == "canceled") {
 		result = cached
 		return
@@ -481,11 +489,6 @@ func (w *Worker) execute(ctx, parent context.Context, c Command, t Task, se Sess
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		runErr = err
 		result.Outcome = "attention"
-		return
-	}
-	if t.CancelRequested {
-		result.Outcome = "interrupted"
-		runErr = context.Canceled
 		return
 	}
 	controller, err := budget.NewDurable(t.Budget, j)
@@ -498,16 +501,21 @@ func (w *Worker) execute(ctx, parent context.Context, c Command, t Task, se Sess
 		runErr = err
 		return
 	}
-	bound, cancel, err := scope.Bind(ctx)
+	readScope, err := execution.NewScope(execution.Config{RunID: t.RunID, SessionID: se.LogID, Journal: j})
 	if err != nil {
 		runErr = err
 		return
 	}
-	defer cancel()
+	inspectBound, inspectCancel, err := readScope.Bind(inspectionCtx)
+	if err != nil {
+		runErr = err
+		return
+	}
+	defer inspectCancel()
 	resources := Resources{Task: t, Session: se, Scope: scope, Journal: j, Budget: controller, Sessions: w.s.cfg.Sessions, ApprovalReader: func(ctx context.Context, id string) (Approval, error) {
 		return read[Approval](ctx, w.s.cfg.Store, "approvals", t.TenantID, id)
 	}}
-	binding, err := w.s.cfg.Factories[v.RunnerKind].Build(bound, v, resources)
+	binding, err := w.s.cfg.Factories[v.RunnerKind].Build(inspectBound, v, resources)
 	if binding.Cleanup != nil {
 		defer func() {
 			cleanCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
@@ -524,7 +532,7 @@ func (w *Worker) execute(ctx, parent context.Context, c Command, t Task, se Sess
 		return
 	}
 	spec := RunSpec{Task: t, ResumeInputs: inputs}
-	evidence, err := binding.Runtime.Inspect(bound, spec)
+	evidence, err := binding.Runtime.Inspect(inspectBound, spec)
 	if err != nil {
 		runErr = err
 		result.Outcome = "attention"
@@ -532,9 +540,56 @@ func (w *Worker) execute(ctx, parent context.Context, c Command, t Task, se Sess
 	}
 	if evidence.State == "completed" {
 		result = evidence.Result
-	} else {
-		result, runErr = binding.Runtime.Run(bound, spec)
+		runErr = w.confirmOutcome(ctx, j, t, v, &result)
+		return
 	}
+	if t.CancelRequested {
+		result.Outcome = "interrupted"
+		runErr = context.Canceled
+		return
+	}
+	bound, cancel, err := scope.Bind(ctx)
+	if err != nil {
+		runErr = err
+		return
+	}
+	defer cancel()
+	if c.ReconciliationRef != "" {
+		if w.s.cfg.Reconciliations == nil || !v.Capabilities.Reconcile {
+			result = RunResult{Outcome: "attention", ErrorKind: "reconciliation_unsupported"}
+			return
+		}
+		rec, e := w.s.cfg.Reconciliations.Lookup(bound, c.Actor, c.ReconciliationRef)
+		if e != nil || rec.TenantID != t.TenantID || rec.TaskID != t.ID || rec.VersionHash != v.ConfigHash || rec.EvidenceHash != c.ReconciliationHash || !sameOperations(t.Operations, rec.OperationRefs) {
+			result = RunResult{Outcome: "attention", ErrorKind: "reconciliation_mismatch"}
+			runErr = e
+			return
+		}
+		reconciler, ok := binding.Runtime.(RuntimeReconciler)
+		if !ok {
+			result = RunResult{Outcome: "attention", ErrorKind: "reconciliation_unsupported"}
+			return
+		}
+		spec.Reconciliation = &rec
+		evidence, err = reconciler.Reconcile(bound, spec, rec)
+		if err != nil {
+			result = RunResult{Outcome: "attention", ErrorKind: "reconciliation_failed"}
+			runErr = err
+			return
+		}
+		if evidence.State == "completed" {
+			result = evidence.Result
+			runErr = w.confirmOutcome(ctx, j, t, v, &result)
+			return
+		}
+	}
+	if evidence.State != "absent" && evidence.State != "waiting" {
+		result = evidence.Result
+		result.Outcome = "attention"
+		result.ErrorKind = "unknown_evidence"
+		return
+	}
+	result, runErr = binding.Runtime.Run(bound, spec)
 	if runErr != nil {
 		if waits := durable.Waits(runErr); waits != nil {
 			result.Outcome = "waiting"
@@ -572,6 +627,30 @@ func (w *Worker) execute(ctx, parent context.Context, c Command, t Task, se Sess
 			runErr = e
 		}
 	}
+}
+
+func (w *Worker) confirmOutcome(ctx context.Context, j durable.Store, t Task, v Version, result *RunResult) error {
+	if result.Outcome != "completed" || !json.Valid(result.Output) {
+		result.Outcome = "attention"
+		result.ErrorKind = "invalid_completion_evidence"
+		return ErrConflict
+	}
+	if len(result.Output) > w.s.cfg.Limits.MaxOutputBytes {
+		result.Outcome = "failed"
+		result.ErrorKind = "output_limit"
+		result.Output = nil
+	}
+	if result.FinishedAt.IsZero() {
+		result.FinishedAt = w.s.cfg.Now().UTC()
+	}
+	persist, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	if e := saveOutcome(persist, j, t, v, *result); e != nil {
+		result.Outcome = "attention"
+		result.ErrorKind = "outcome_unconfirmed"
+		return e
+	}
+	return nil
 }
 func WaitPoints(waits []*durable.WaitError) []WaitPoint {
 	out := []WaitPoint{}
@@ -626,7 +705,16 @@ func (w *Worker) finish(ctx context.Context, c Command, original Task, attempt A
 		old := t.Revision
 		t.Revision++
 		t.ErrorKind = result.ErrorKind
+		if result.Operations != nil {
+			t.Operations = result.Operations
+		}
+		if t.CancelRequested && result.Outcome == "waiting" {
+			result.Outcome = "canceled"
+		}
 		switch result.Outcome {
+		case "canceled":
+			t.State = Canceled
+			t.Waits = nil
 		case "completed":
 			t.State = Succeeded
 			t.Result = result.Output

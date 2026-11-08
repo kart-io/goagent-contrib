@@ -94,6 +94,7 @@ type Session struct {
 	ActiveTaskID string `json:"active_task_id,omitempty"`
 }
 type Task struct {
+	Operations []durable.OperationRef `json:"operations,omitempty"`
 	Meta
 	SessionID       string          `json:"session_id"`
 	AgentID         string          `json:"agent_id"`
@@ -149,6 +150,8 @@ type Approval struct {
 	DecidedAt *time.Time `json:"decided_at,omitempty"`
 }
 type Command struct {
+	ReconciliationRef  string `json:"reconciliation_ref,omitempty"`
+	ReconciliationHash string `json:"reconciliation_hash,omitempty"`
 	Meta
 	TaskID      string          `json:"task_id,omitempty"`
 	SessionID   string          `json:"session_id,omitempty"`
@@ -312,9 +315,10 @@ func DefaultLimits() Limits {
 }
 
 type Capabilities struct {
-	Approval bool `json:"approval"`
-	Fork     bool `json:"fork"`
-	Input    bool `json:"input"`
+	Reconcile bool `json:"reconcile"`
+	Approval  bool `json:"approval"`
+	Fork      bool `json:"fork"`
+	Input     bool `json:"input"`
 }
 type Resources struct {
 	Task           Task
@@ -326,16 +330,18 @@ type Resources struct {
 	ApprovalReader func(context.Context, string) (Approval, error)
 }
 type RunSpec struct {
-	Task         Task
-	ResumeInputs map[string]string
+	Reconciliation *Reconciliation
+	Task           Task
+	ResumeInputs   map[string]string
 }
 type RunResult struct {
-	Outcome    string          `json:"outcome"`
-	Output     json.RawMessage `json:"output,omitempty"`
-	Waits      []WaitPoint     `json:"waits,omitempty"`
-	ErrorKind  string          `json:"error_kind,omitempty"`
-	ResultRef  string          `json:"result_ref,omitempty"`
-	FinishedAt time.Time       `json:"finished_at"`
+	Operations []durable.OperationRef `json:"operations,omitempty"`
+	Outcome    string                 `json:"outcome"`
+	Output     json.RawMessage        `json:"output,omitempty"`
+	Waits      []WaitPoint            `json:"waits,omitempty"`
+	ErrorKind  string                 `json:"error_kind,omitempty"`
+	ResultRef  string                 `json:"result_ref,omitempty"`
+	FinishedAt time.Time              `json:"finished_at"`
 }
 type RunEvidence struct {
 	State  string
@@ -344,6 +350,11 @@ type RunEvidence struct {
 type Runtime interface {
 	Run(context.Context, RunSpec) (RunResult, error)
 	Inspect(context.Context, RunSpec) (RunEvidence, error)
+}
+
+// RuntimeReconciler 只接受宿主核对的不可变证据，不得绕过原操作的重试策略。
+type RuntimeReconciler interface {
+	Reconcile(context.Context, RunSpec, Reconciliation) (RunEvidence, error)
 }
 type Binding struct {
 	Runtime Runtime

@@ -6,12 +6,13 @@
 | --- | --- |
 | `pgstore` | management.Store 与 HistoryReader 的 PostgreSQL 实现 |
 | `integration` | 真实数据库、HTTP、审批、进程恢复与并发集成测试 |
-| `examples/host` | 离线退款 Agent 的可运行宿主及 8 组 HTTP 黑盒案例 |
+| `examples/host` | 离线退款 Agent 的可运行宿主，默认8组、扩展20组HTTP黑盒案例 |
 | `harness` | 可选独立模块，对接 background 和 effects |
 
 - [核心管理说明](https://github.com/kart-io/goagent/blob/master/management/README.md)
 - [核心迁移指南](https://github.com/kart-io/goagent/blob/master/docs/guides/MANAGEMENT_MIGRATION.md)
 - [当前 OpenAPI](https://github.com/kart-io/goagent/blob/master/management/httpapi/openapi.yaml)
+- [扩展案例验收报告](https://github.com/kart-io/goagent/blob/master/docs/evaluation/2026-11-08-management-expanded-cases/REPORT.md)
 - [迁移验收结果](docs/core-migration.md)、[运行与恢复](docs/operations.md)、[验收案例](docs/acceptance.md)
 - docs 中原规划、案例日志和合并记录保留为迁移前的历史证据，不代表当前包归属。
 

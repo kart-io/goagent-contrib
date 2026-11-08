@@ -63,7 +63,8 @@ bash scripts/with-local-modules.sh go -C management test -race -count=1 -v \
 ```bash
 bash scripts/with-local-modules.sh go -C management test -race -count=1 -v \
   -run 'Test(GraphDecisionAfterLostAck|ForkSourceAndTargetIsolated|AllManagementRoutes|HostRegisterPublishSessionTaskApprovalResume)' ./integration
-bash scripts/with-local-modules.sh go -C management test -race -count=1 ./httpapi ./pgstore
+bash scripts/with-local-modules.sh go -C management test -race -count=1 ./pgstore
+env GOWORK=off go -C "$GOAGENT_CORE_ROOT" test -race -count=1 ./management/httpapi
 ```
 
 验证图的批准/拒绝分支、重复决定不重复效果、活动会话不能 Fork、分支历史隔离、HTTP 管理路由和持久计量。协议测试另外检查重复 JSON 键、未知字段、体积限制、内部键隐藏，以及业务字段不被错误脱敏。Postgres 单元测试验证事务回滚与权限过滤先于 LIMIT。

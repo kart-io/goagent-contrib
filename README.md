@@ -4,7 +4,7 @@
 
 | 模块 | 说明 | 主要第三方依赖 |
 | --- | --- | --- |
-| [`management`](management) | Agent 版本、Session/Fork、持久 Task、审批与运行查询；含管理 HTTP 和可复跑退款案例，单活动 worker | pgx、GoAgent |
+| [`management`](management) | 核心 management 的 PostgreSQL 实现、真实数据库集成测试与退款案例；通用管理和 HTTP Handler 已迁入 GoAgent | pgx、GoAgent |
 | [`httpagent`](httpagent) | HTTP JSON/SSE、WebSocket 入口，双向 Webhook 接纳/通知与生命周期观察，配合 Plugin 使用 | net/http、gorilla/websocket |
 | [`acp`](acp) | 以 Agent Client Protocol（ACP）Agent 身份经 stdio 运行 Agent，供 Zed 等编辑器驱动：流式回答、工具通知与审批、会话恢复、文件与终端转发 | coder/acp-go-sdk |
 | [`durable/pgstore`](durable/pgstore) | 基于 Postgres 的 `durable.Store`、`durable.Scoped` 与会话日志 `session.Store`，支持多个实例共享持久运行与会话 | pgx |

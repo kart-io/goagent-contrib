@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -39,9 +38,31 @@ func TestLiveManagement(t *testing.T) {
 	if selected == "" {
 		selected = "deepseek,gemini"
 	}
-	for _, name := range strings.Split(selected, ",") {
+	var names []string
+	seen := map[string]bool{}
+	for _, value := range strings.Split(selected, ",") {
+		name := strings.TrimSpace(value)
+		require.True(t, name == "deepseek" || name == "gemini", "不支持的真实模型提供方：%s", name)
+		require.False(t, seen[name], "重复的真实模型提供方：%s", name)
+		seen[name] = true
+		key := strings.ToUpper(name) + "_API_KEY"
+		require.NotEmpty(t, strings.TrimSpace(os.Getenv(key)), "%s未设置；全部配置通过前不运行案例", key)
+		names = append(names, name)
+	}
+	dir := os.Getenv("GOAGENT_MANAGEMENT_LIVE_REPORT_DIR")
+	require.NotEmpty(t, dir, "真实模型验收必须设置GOAGENT_MANAGEMENT_LIVE_REPORT_DIR以保留请求证据")
+	require.NoError(t, os.MkdirAll(filepath.Dir(dir), 0700))
+	require.NoError(t, os.Mkdir(dir, 0700), "报告目录必须不存在；调用模型前独占新目录，避免覆盖已有场景报告")
+	ledgers := map[string]*liveLedger{}
+	for _, name := range names {
+		ledger, err := newLiveLedger(dir, name)
+		require.NoError(t, err, "请求日志必须可写且不存在；预检失败不调用模型")
+		ledgers[name] = ledger
+		t.Cleanup(func() { require.NoError(t, ledger.close()) })
+	}
+	for _, name := range names {
 		t.Run(name, func(t *testing.T) {
-			ledger := &liveLedger{}
+			ledger := ledgers[name]
 			var model string
 			var create func() (llm.ToolStreamClient, error)
 			switch name {
@@ -84,111 +105,6 @@ func TestLiveManagement(t *testing.T) {
 			}
 		})
 	}
-}
-
-type liveCall struct {
-	TaskID        string          `json:"task_id"`
-	ResponseModel string          `json:"response_model,omitempty"`
-	FinishReason  string          `json:"finish_reason,omitempty"`
-	ToolCalls     []llm.ToolCall  `json:"tool_calls,omitempty"`
-	Usage         *llm.Usage      `json:"usage"`
-	UsageFields   uint64          `json:"usage_fields"`
-	Status        string          `json:"status"`
-	ErrorReason   llm.ErrorReason `json:"error_reason,omitempty"`
-	MaxTokens     int             `json:"max_output_tokens"`
-}
-
-type liveLedger struct {
-	mu    sync.Mutex
-	calls []liveCall
-}
-
-func (l *liveLedger) snapshot() []liveCall {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return append([]liveCall(nil), l.calls...)
-}
-
-// 包装器只限额、记录并原样透传，不注入工具调用或模拟用量。
-type liveObservedModel struct {
-	llm.ToolStreamClient
-	ledger *liveLedger
-	taskID string
-}
-
-func (m *liveObservedModel) CompleteToolsStream(ctx context.Context, req *llm.CompletionRequest, available []interfaces.Tool) (<-chan *llm.StreamChunk, error) {
-	if req == nil || req.MaxTokens != 1024 {
-		return nil, fmt.Errorf("真实验收必须显式限制每次输出为1024Token")
-	}
-	m.ledger.mu.Lock()
-	if len(m.ledger.calls) >= 20 {
-		m.ledger.mu.Unlock()
-		return nil, fmt.Errorf("真实验收达到每提供方20次请求上限")
-	}
-	index := len(m.ledger.calls)
-	m.ledger.calls = append(m.ledger.calls, liveCall{TaskID: m.taskID, Status: "started", MaxTokens: req.MaxTokens})
-	m.ledger.mu.Unlock()
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	upstream, err := m.ToolStreamClient.CompleteToolsStream(ctx, req, available)
-	if err != nil {
-		cancel()
-		m.ledger.mu.Lock()
-		m.ledger.calls[index].Status = "request_error"
-		m.ledger.calls[index].ErrorReason = llm.ClassifyError(err).Reason
-		m.ledger.mu.Unlock()
-		return nil, err
-	}
-	out := make(chan *llm.StreamChunk)
-	go func() {
-		defer close(out)
-		defer cancel()
-		defer func() {
-			m.ledger.mu.Lock()
-			defer m.ledger.mu.Unlock()
-			if m.ledger.calls[index].Status == "started" {
-				m.ledger.calls[index].Status = "incomplete"
-			}
-		}()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case chunk, ok := <-upstream:
-				if !ok {
-					return
-				}
-				if chunk == nil {
-					continue
-				}
-				m.ledger.mu.Lock()
-				call := &m.ledger.calls[index]
-				if chunk.ResponseModel != "" {
-					call.ResponseModel = chunk.ResponseModel
-				}
-				if chunk.Done {
-					call.Status = "completed"
-					if chunk.Error != nil {
-						call.Status = "stream_error"
-						call.ErrorReason = llm.ClassifyError(chunk.Error).Reason
-					}
-					call.FinishReason = chunk.FinishReason
-					call.ToolCalls = append([]llm.ToolCall(nil), chunk.ToolCalls...)
-					if chunk.Usage != nil {
-						copyUsage := *chunk.Usage
-						call.Usage = &copyUsage
-						call.UsageFields = uint64(chunk.Usage.Fields())
-					}
-				}
-				m.ledger.mu.Unlock()
-				select {
-				case out <- chunk:
-				case <-ctx.Done():
-					return
-				}
-			}
-		}
-	}()
-	return out, nil
 }
 
 type liveCase struct {
@@ -345,10 +261,14 @@ func (c *liveCase) session() mg.Session {
 func (c *liveCase) ready(id string) mg.Session {
 	c.t.Helper()
 	var se mg.Session
-	require.Eventually(c.t, func() bool {
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); {
 		c.call("GET", "/v1/sessions/"+id, nil, "", 200, &se)
-		return se.Status == "ready"
-	}, 10*time.Second, 25*time.Millisecond)
+		if se.Status == "ready" {
+			return se
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	require.FailNow(c.t, "等待会话就绪超时", "状态=%s", se.Status)
 	return se
 }
 
@@ -362,11 +282,15 @@ func (c *liveCase) submit(sessionID, text, key string) mg.Task {
 func (c *liveCase) wait(id string, state mg.TaskState) mg.Task {
 	c.t.Helper()
 	var task mg.Task
-	require.Eventually(c.t, func() bool {
+	for deadline := time.Now().Add(90 * time.Second); time.Now().Before(deadline); {
 		c.call("GET", "/v1/tasks/"+id, nil, "", 200, &task)
-		return task.State == state || task.State.Terminal()
-	}, 90*time.Second, 50*time.Millisecond)
-	require.Equal(c.t, state, task.State, "真实模型任务意外终止：错误类别=%s", task.ErrorKind)
+		if task.State == state || task.State.Terminal() {
+			require.Equal(c.t, state, task.State, "真实模型任务意外终止：错误类别=%s", task.ErrorKind)
+			return task
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	require.FailNow(c.t, "等待任务状态超时", "状态=%s，错误类别=%s", task.State, task.ErrorKind)
 	return task
 }
 

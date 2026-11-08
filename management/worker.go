@@ -7,9 +7,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/kart-io/goagent/core/budget"
 	"github.com/kart-io/goagent/core/durable"
+	"github.com/kart-io/goagent/core/observe"
 	"github.com/kart-io/goagent/core/session"
 	agentErrors "github.com/kart-io/goagent/errors"
 	"github.com/kart-io/goagent/execution"
+	"go.opentelemetry.io/otel/trace"
 	"os"
 	"sync"
 	"time"
@@ -399,6 +401,9 @@ func (w *Worker) start(ctx context.Context, c Command) error {
 			return e
 		}
 		attempt = Attempt{Meta: w.s.meta(task.Actor), TaskID: task.ID, Number: len(attempts) + 1, WorkerID: w.id}
+		if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {
+			attempt.TraceID = sc.TraceID().String()
+		}
 		if e = insert(ctx, tx, "attempts", attempt); e != nil {
 			return e
 		}
@@ -420,7 +425,23 @@ func (w *Worker) start(ctx context.Context, c Command) error {
 		defer w.wg.Done()
 		defer cancel()
 		defer func() { w.mu.Lock(); delete(w.live, task.ID); w.mu.Unlock() }()
-		w.execute(runCtx, ctx, c, task, se, v, attempt, inputs)
+		tracer := w.s.cfg.Tracer
+		if tracer == nil {
+			tracer = observe.TracerFromContext(runCtx)
+		}
+		traced, span := tracer.Start(runCtx, "management.task")
+		defer span.End()
+		if sc := span.SpanContext(); sc.IsValid() && attempt.TraceID != sc.TraceID().String() {
+			attempt.TraceID = sc.TraceID().String()
+			next := attempt
+			next.Revision++
+			if e := w.s.cfg.Store.WithinTx(traced, func(tx Tx) error { return update(traced, tx, "attempts", next, attempt.Revision) }); e == nil {
+				attempt = next
+			} else {
+				w.report("trace", e)
+			}
+		}
+		w.execute(traced, ctx, c, task, se, v, attempt, inputs)
 	}()
 	return nil
 }
@@ -496,7 +517,7 @@ func (w *Worker) execute(ctx, parent context.Context, c Command, t Task, se Sess
 		runErr = err
 		return
 	}
-	scope, err := execution.NewScope(execution.Config{RunID: t.RunID, SessionID: se.LogID, Journal: j, Budget: controller})
+	scope, err := execution.NewScope(execution.Config{RunID: t.RunID, SessionID: se.LogID, Journal: j, Budget: controller, Tracer: w.s.cfg.Tracer})
 	if err != nil {
 		runErr = err
 		return
@@ -818,7 +839,7 @@ func (w *Worker) finish(ctx context.Context, c Command, original Task, attempt A
 		attempt.FinishedAt = &result.FinishedAt
 		attempt.Outcome = string(t.State)
 		attempt.Revision++
-		if e = update(ctx, tx, "attempts", attempt, 1); e != nil {
+		if e = update(ctx, tx, "attempts", attempt, attempt.Revision-1); e != nil {
 			return e
 		}
 		return w.s.audit(ctx, tx, t.Actor, "tasks", t.ID, "state", string(t.State))

@@ -25,7 +25,7 @@ type Handler struct {
 	mux *http.ServeMux
 }
 
-var Routes = []string{"POST /v1/agents", "GET /v1/agents", "GET /v1/agents/{id}", "POST /v1/agents/{id}/versions", "GET /v1/agents/{id}/versions", "POST /v1/agents/{id}/publish", "POST /v1/agents/{id}/enable", "POST /v1/agents/{id}/disable", "POST /v1/sessions", "GET /v1/sessions", "GET /v1/sessions/{id}", "GET /v1/sessions/{id}/history", "POST /v1/sessions/{id}/fork", "POST /v1/tasks", "GET /v1/tasks", "GET /v1/tasks/{id}", "POST /v1/tasks/{id}/cancel", "POST /v1/tasks/{id}/resume", "GET /v1/approvals", "GET /v1/approvals/{id}", "POST /v1/approvals/{id}/decision", "GET /v1/runs", "GET /v1/runs/{id}", "GET /v1/commands/{id}"}
+var Routes = []string{"POST /v1/agents", "GET /v1/agents", "GET /v1/agents/{id}", "POST /v1/agents/{id}/versions", "GET /v1/agents/{id}/versions", "POST /v1/agents/{id}/publish", "POST /v1/agents/{id}/enable", "POST /v1/agents/{id}/disable", "POST /v1/sessions", "GET /v1/sessions", "GET /v1/sessions/{id}", "GET /v1/sessions/{id}/history", "POST /v1/sessions/{id}/fork", "POST /v1/tasks", "GET /v1/tasks", "GET /v1/tasks/{id}", "POST /v1/tasks/{id}/cancel", "POST /v1/tasks/{id}/resume", "GET /v1/approvals", "GET /v1/approvals/{id}", "POST /v1/approvals/{id}/decision", "GET /v1/runs", "GET /v1/runs/{id}", "GET /v1/commands/{id}", "GET /v1/runs/summary"}
 
 func New(s *mg.Service, c Config) (*Handler, error) {
 	if s == nil || c.ActorFromRequest == nil {
@@ -340,6 +340,9 @@ func (h *Handler) register() {
 		in.IdempotencyKey = r.Header.Get("Idempotency-Key")
 		in.ApprovalID = r.PathValue("id")
 		return h.s.DecideApproval(c, a, in)
+	})
+	h.get(Routes[24], func(c context.Context, a mg.Actor, r *http.Request, q mg.Query) (any, error) {
+		return h.s.SummarizeRuns(c, a, q)
 	})
 	h.get(Routes[21], func(c context.Context, a mg.Actor, r *http.Request, q mg.Query) (any, error) {
 		return h.s.ListRuns(c, a, q)

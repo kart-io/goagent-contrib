@@ -11,6 +11,7 @@ import (
 	"github.com/kart-io/goagent/core/durable"
 	"github.com/kart-io/goagent/core/session"
 	"github.com/kart-io/goagent/execution"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type TaskState string
@@ -376,6 +377,7 @@ type DeliverySink interface {
 	Accept(context.Context, Delivery) error
 }
 type Config struct {
+	Tracer               trace.Tracer
 	ConfirmWorkerStopped func(context.Context, string, int64) error
 	Store                Store
 	Sessions             session.Store

@@ -5,7 +5,7 @@ go 1.27.0
 require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.10.0
-	github.com/kart-io/goagent v0.50.1-0.20261108090514-db7fffed9a84
+	github.com/kart-io/goagent v0.50.1-0.20261108103007-6747dc0b0d73
 	github.com/kart-io/goagent-contrib/durable/pgstore v0.5.1-0.20261107151427-7637a02d2a30
 	github.com/stretchr/testify v1.12.1
 	go.opentelemetry.io/otel/trace v1.47.0

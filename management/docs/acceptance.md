@@ -89,3 +89,15 @@ bash scripts/with-local-modules.sh go -C management test -race -count=1 -timeout
 ## 黑盒业务脚本
 
 [本轮案例实测](case-test-results.md)提供真实 TCP HTTP 的 8 组业务场景，以及 SQL 副作用和日志内容核对。可运行脚本为 [test_cases.py](../examples/host/test_cases.py)，不依赖第三方 Python 包；复跑命令与本次原始结果都在该报告中。
+
+## 扩展运营与边界验收
+
+使用[扩展案例命令](../README.md#扩展功能案例)运行20组真实HTTP业务案例；默认不带--extended仍运行原8组。`integration/expanded_cases_test.go`增加四项真实Postgres案例，使用 `-run '^TestExpanded'` 单独运行。
+
+| 功能 | 新增业务验证 |
+| --- | --- |
+| Agent与版本 | 注册重投、配置不可覆盖、大整数、发布失败不改变状态、陈旧修订不能覆盖当前配置 |
+| Session与历史 | 显式v1和默认v2、分页完整与游标绑定、内部快照禁止读取、精确历史轮次Fork、停用Fork拒绝及启用后重试 |
+| Task与接纳 | 排队列表、取消队尾不影响前序、取消重投、终态保护、容量拒绝不留任务且释放后原键可重试 |
+| 普通输入续跑 | 伪造等待点拒绝、无效输入仍等待且无SQL效果、宿主重建后有效输入续跑、幂等重投不重复效果 |
+| 隔离与观测 | 不同租户同键互不干扰，排队取消用量保持未知，跨Agent汇总与任务/退款SQL一致 |

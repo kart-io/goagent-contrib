@@ -12,6 +12,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import urllib.parse
 import uuid
 from pathlib import Path
 
@@ -29,15 +30,15 @@ class Cases:
         self.requests = []
         self.results = []
 
-    def call(self, method, path, body=None, expected=200, key=None, authorized=True):
+    def call(self, method, path, body=None, expected=200, key=None, authorized=True, raw=None):
         headers = {"Content-Type": "application/json"}
         if authorized:
             headers["Authorization"] = "Bearer " + self.token
-        if method == "POST":
+        if method == "POST" and key is not False:
             headers["Idempotency-Key"] = key or str(uuid.uuid4())
         request = urllib.request.Request(
             self.url + path,
-            data=None if body is None else json.dumps(body, ensure_ascii=False).encode(),
+            data=raw if raw is not None else (None if body is None else json.dumps(body, ensure_ascii=False).encode()),
             headers=headers,
             method=method,
         )
@@ -86,8 +87,11 @@ class Cases:
         count, fingerprint = value.split(",")
         return int(count), fingerprint
 
-    def session(self, agent_id):
-        value = self.call("POST", "/v1/sessions", {"agent_id": agent_id}, expected=202)
+    def session(self, agent_id, version=None):
+        body = {"agent_id": agent_id}
+        if version is not None:
+            body["version"] = version
+        value = self.call("POST", "/v1/sessions", body, expected=202)
         return self.wait("/v1/sessions/" + value["id"], lambda item: item["status"] == "ready")
 
     def submit(self, session_id, text, key=None):
@@ -230,12 +234,196 @@ class Cases:
         self.record("只读查询和跨页汇总与数据库一致", 查询前事件数=before_events, 查询后事件数=after_events, 日志内容摘要未变=before_fingerprint == after_fingerprint, 任务数=6, Token=55, 退款次数=refund_count, 退款总额=refund_amount, 状态=summary["totals"]["states"])
         return {"Agent": aid, "cases": self.results, "http_requests": self.requests}
 
+    def run_extended(self):
+        # 专用数据库允许重复验收；跨Agent汇总按本轮增量核对，不假定demo租户为空。
+        before_totals = self.call("GET", "/v1/runs/summary?limit=1")["totals"]
+        key = str(uuid.uuid4())
+        body = {"name": "扩展案例客服"}
+        agent = self.call("POST", "/v1/agents", body, expected=201, key=key)
+        duplicate = self.call("POST", "/v1/agents", body, expected=201, key=key)
+        check(duplicate["id"] == agent["id"], "注册重投创建了第二个Agent")
+        self.call("POST", "/v1/agents", {"name": "不同注册内容"}, expected=409, key=key)
+        aid = self.resource_id(agent["id"])
+        self.record("Agent注册幂等与不同内容冲突", Agent=aid, 重投复用=True, 内容冲突HTTP=409)
+
+        version_key = str(uuid.uuid4())
+        version = {"version": "v1", "runner_kind": "refund", "implementation_version": "demo-v1",
+                   "config": {"large": 9007199254740993, "nested": {"b": 2, "a": 1}}}
+        saved = self.call("POST", f"/v1/agents/{aid}/versions", version, expected=201, key=version_key)
+        reordered = dict(reversed(list(version.items())))
+        reordered["config"] = {"nested": {"a": 1, "b": 2}, "large": 9007199254740993}
+        repeated = self.call("POST", f"/v1/agents/{aid}/versions", reordered, expected=201, key=version_key)
+        check(saved["id"] == repeated["id"] and saved["config_hash"] == repeated["config_hash"], "JSON键序改变了幂等结果")
+        self.call("POST", f"/v1/agents/{aid}/versions", {**version, "config": {"large": 9007199254740992}}, expected=409)
+        versions = self.call("GET", f"/v1/agents/{aid}/versions?limit=200")["items"]
+        check(len(versions) == 1 and versions[0]["config"]["large"] == 9007199254740993, "版本被覆盖或数字失真")
+        self.record("版本不可覆盖与JSON精确数值", 版本数=1, 大整数=versions[0]["config"]["large"], 键序不影响幂等=True)
+
+        self.call("POST", f"/v1/agents/{aid}/publish", {"version": "不存在", "expected_revision": agent["revision"]}, expected=404)
+        unchanged = self.call("GET", "/v1/agents/" + aid)
+        check(unchanged == agent, "失败发布改变Agent状态")
+        self.call("POST", f"/v1/agents/{aid}/versions", {"version": "v2", "runner_kind": "refund",
+                  "implementation_version": "demo-v2", "config": {}}, expected=201)
+        published = self.call("POST", f"/v1/agents/{aid}/publish", {"version": "v1", "expected_revision": agent["revision"]})
+        self.call("POST", f"/v1/agents/{aid}/publish", {"version": "v2", "expected_revision": agent["revision"]}, expected=409)
+        self.call("POST", f"/v1/agents/{aid}/disable", {"expected_revision": agent["revision"]}, expected=409)
+        check(self.call("GET", "/v1/agents/" + aid) == published, "陈旧修订覆盖当前配置")
+        agent = self.call("POST", f"/v1/agents/{aid}/publish", {"version": "v2", "expected_revision": published["revision"]})
+        self.record("发布失败与修订冲突保持状态", 不存在版本HTTP=404, 陈旧修订HTTP=409, 当前版本="v2")
+
+        legacy = self.session(aid, "v1")
+        fresh = self.session(aid)
+        spare = self.session(aid)
+        check(legacy["version"] == "v1" and fresh["version"] == "v2", "显式旧版本或默认新版本绑定错误")
+        self.record("显式旧版本与默认新版本会话", 显式版本=legacy["version"], 默认版本=fresh["version"])
+
+        prefix = f"/v1/sessions?agent_id={aid}&limit=1"
+        page = self.call("GET", prefix)
+        first_cursor = page["next_cursor"]
+        check(bool(first_cursor), "分页没有返回后续游标")
+        seen = []
+        for _ in range(10):
+            seen.extend(item["id"] for item in page["items"])
+            cursor = page.get("next_cursor")
+            if not cursor:
+                break
+            page = self.call("GET", prefix + "&cursor=" + urllib.parse.quote(cursor, safe=""))
+        else:
+            raise AssertionError("Session分页游标没有结束")
+        check(len(seen) == 3 and set(seen) == {legacy["id"], fresh["id"], spare["id"]}, "分页重复或遗漏会话")
+        self.call("GET", f"/v1/sessions?agent_id={aid}&limit=2&cursor=" + urllib.parse.quote(first_cursor, safe=""), expected=400)
+        self.call("GET", "/v1/sessions?agent_id=" + str(uuid.uuid4()) + "&limit=1&cursor=" + urllib.parse.quote(first_cursor, safe=""), expected=400)
+        for query in ["limit=-1", "limit=201", "limit=非数字", "cursor=not-a-cursor", "created_from=not-a-date"]:
+            self.call("GET", "/v1/sessions?" + urllib.parse.quote(query, safe="=&-"), expected=400)
+        self.record("分页完整且游标绑定查询", 会话数=3, 无重复遗漏=True, 变更查询或非法参数HTTP=400)
+
+        before_agents = self.sql("SELECT count(*) FROM mg_agents WHERE tenant_id='demo'")
+        for raw in [b'{"name":"bad","name":"duplicate"}', b'{"name":"bad","unknown":1}',
+                    b'{"Name":"bad"}', b'{"name":"\xff"}', b'{"name":"bad"} {}']:
+            self.call("POST", "/v1/agents", raw=raw, expected=400)
+        self.call("POST", "/v1/agents", {"name": "缺少幂等键"}, key=False, expected=400)
+        self.call("POST", "/v1/agents", raw=b'{"name":"' + b'x' * (1 << 20) + b'"}', expected=413)
+        missing = str(uuid.uuid4())
+        for path in ["/v1/tasks/" + missing, "/v1/commands/" + missing, "/v1/sessions/" + missing + "/history"]:
+            self.call("GET", path, expected=404)
+        check(self.sql("SELECT count(*) FROM mg_agents WHERE tenant_id='demo'") == before_agents, "非法请求留下Agent")
+        self.record("非法请求拒绝且不创建Agent", JSON拒绝数=5, 缺幂等键HTTP=400, 超大请求HTTP=413, 未知资源HTTP=404, Agent数量未变=True)
+
+        first = self.submit(legacy["id"], "前序任务等待审批")
+        _, first_approval = self.pending(first)
+        queued = self.submit(legacy["id"], "排队后取消")
+        current = self.wait("/v1/tasks/" + queued["id"], lambda item: item["state"] == "queued")
+        queue_page = self.call("GET", f"/v1/tasks?session_id={legacy['id']}&status=queued")
+        wait_page = self.call("GET", f"/v1/tasks?session_id={legacy['id']}&status=waiting_approval")
+        check([item["id"] for item in queue_page["items"]] == [queued["id"]], "待处理任务列表不准确")
+        check([item["id"] for item in wait_page["items"]] == [first["id"]], "审批等待列表混入其他任务")
+        cancel_key = str(uuid.uuid4())
+        cancel_body = {"expected_revision": current["revision"], "reason": "取消队尾"}
+        canceled = self.call("POST", f"/v1/tasks/{queued['id']}/cancel", cancel_body, key=cancel_key, expected=202)
+        self.finish(queued["id"], "canceled")
+        still_waiting = self.call("GET", "/v1/tasks/" + first["id"])
+        check(still_waiting["state"] == "waiting_approval" and self.refunds(first["id"]) == 0, "取消队尾影响前序任务")
+        self.record("同会话队列查询及取消隔离", 前序状态="waiting_approval", 队尾状态="canceled", 前序退款=0)
+
+        repeated_cancel = self.call("POST", f"/v1/tasks/{queued['id']}/cancel", cancel_body, key=cancel_key, expected=202)
+        check(repeated_cancel == canceled, "取消重投没有复用响应")
+        self.call("POST", f"/v1/tasks/{queued['id']}/resume", {"expected_revision": canceled["revision"],
+                  "wait_id": "无等待点", "input": 1}, expected=409)
+        queued_run = self.call("GET", "/v1/runs/" + queued["id"])
+        check(not queued_run["attempts"] and queued_run["usage"] is None and self.refunds(queued["id"]) == 0,
+              "排队取消仍执行或将未知用量当作0")
+        self.record("取消幂等与终态禁止续跑", 重投复用=True, 取消后恢复HTTP=409, 尝试数=0, 用量=None, 退款=0)
+
+        self.decide(first_approval, "approve", "前序批准")
+        completed = self.finish(first["id"])
+        check(completed["result"].startswith("v1："), "显式v1会话没有使用旧版本执行")
+        first_history = self.call("GET", f"/v1/sessions/{legacy['id']}/history?limit=200")["items"]
+        first_end = [event["seq"] for event in first_history if event["type"] == "turn/end"][-1]
+        following = self.submit(legacy["id"], "队尾取消后继续执行")
+        _, following_approval = self.pending(following)
+        self.decide(following_approval, "approve", "后续批准")
+        self.finish(following["id"])
+        newest = self.submit(fresh["id"], "默认v2执行")
+        _, newest_approval = self.pending(newest)
+        self.decide(newest_approval, "approve", "新版批准")
+        newest_done = self.finish(newest["id"])
+        check(newest_done["result"].startswith("v2："), "默认新版本没有按v2执行")
+        terminal = self.call("POST", f"/v1/tasks/{first['id']}/cancel", {"expected_revision": 0}, expected=202)
+        check(terminal == completed, "已完成任务被取消覆盖")
+        self.call("POST", f"/v1/tasks/{first['id']}/resume", {"expected_revision": completed["revision"],
+                  "wait_id": first_approval["wait"]["id"], "input": 1}, expected=409)
+        check(self.refunds(first["id"]) == 1 and len(self.call("GET", "/v1/runs/" + first["id"])["attempts"]) == 2,
+              "终态操作重复运行或重复退款")
+        self.record("终态结果保护与队列继续执行", 完成后取消保持成功=True, 完成后恢复HTTP=409, 旧版实际结果=completed["result"], 新版实际结果=newest_done["result"])
+
+        full_history = self.call("GET", f"/v1/sessions/{legacy['id']}/history?limit=200")["items"]
+        history_items = []
+        after = 0
+        for _ in range(len(full_history) + 2):
+            page = self.call("GET", f"/v1/sessions/{legacy['id']}/history?limit=2&after_seq={after}")
+            items = page["items"] or []
+            if not items:
+                break
+            check(page["next_seq"] > after, "历史游标没有推进")
+            history_items.extend(items)
+            after = page["next_seq"]
+        else:
+            raise AssertionError("历史分页没有结束")
+        check(history_items == full_history, "历史分页遗漏、重复或改写事件")
+        check(all(item["type"] != "boundary/snapshot" and not item["type"].startswith("management/") for item in full_history),
+              "默认历史暴露内部快照")
+        for kind in ["boundary/snapshot", "management/session"]:
+            self.call("GET", f"/v1/sessions/{legacy['id']}/history?type=" + urllib.parse.quote(kind, safe=""), expected=403)
+        self.call("GET", f"/v1/sessions/{legacy['id']}/history?after_seq=-1", expected=400)
+        self.record("历史分页完整并保护内部类型", 历史事件数=len(full_history), 页大小=2, 内部类型HTTP=403, 负序号HTTP=400)
+
+        source = self.call("GET", "/v1/sessions/" + legacy["id"])
+        fork_path = f"/v1/sessions/{source['id']}/fork"
+        request = {"expected_revision": source["revision"], "up_to": first_end}
+        copied = self.call("POST", fork_path, request, expected=202)
+        copied = self.wait("/v1/sessions/" + copied["id"], lambda item: item["status"] == "ready")
+        copied_history = self.call("GET", f"/v1/sessions/{copied['id']}/history?limit=200")["items"]
+        check(copied_history == first_history and copied["fork_seq"] == first_end, "精确轮次Fork复制了未来历史")
+        self.call("POST", fork_path, {**request, "up_to": full_history[0]["seq"]}, expected=400)
+        self.call("POST", fork_path, {**request, "up_to": full_history[-1]["seq"] + 100}, expected=400)
+        self.call("POST", fork_path, {**request, "expected_revision": source["revision"] - 1}, expected=409)
+        self.call("POST", f"/v1/sessions/{spare['id']}/fork", {"expected_revision": spare["revision"], "up_to": 0}, expected=400)
+        self.record("精确轮次Fork与非法边界拒绝", Fork序号=first_end, 分支事件数=len(copied_history), 源事件数=len(full_history), 非结束或未来边界HTTP=400, 陈旧修订HTTP=409)
+
+        agent = self.call("GET", "/v1/agents/" + aid)
+        disabled = self.call("POST", f"/v1/agents/{aid}/disable", {"expected_revision": agent["revision"]})
+        fork_key = str(uuid.uuid4())
+        before_sessions = self.sql(f"SELECT count(*) FROM mg_sessions WHERE tenant_id='demo' AND data->>'agent_id'='{aid}'")
+        self.call("POST", fork_path, request, key=fork_key, expected=409)
+        check(self.sql(f"SELECT count(*) FROM mg_sessions WHERE tenant_id='demo' AND data->>'agent_id'='{aid}'") == before_sessions,
+              "停用期间Fork留下子会话")
+        self.call("POST", f"/v1/agents/{aid}/enable", {"expected_revision": disabled["revision"]})
+        retried = self.call("POST", fork_path, request, key=fork_key, expected=202)
+        self.wait("/v1/sessions/" + retried["id"], lambda item: item["status"] == "ready")
+        self.record("停用阻止Fork且启用后原键重试", 停用ForkHTTP=409, 拒绝未新增会话=True, 启用后同键成功=True)
+
+        summary = self.call("GET", f"/v1/runs/summary?agent_id={aid}&limit=1")
+        check(summary["totals"]["tasks"] == 4 and summary["totals"]["known_tokens"]["total_tokens"] == 30,
+              "扩展案例任务或消耗汇总错误")
+        check(summary["totals"]["states"] == {"succeeded": 3, "canceled": 1}, "扩展状态汇总错误")
+        for task in [first, following, newest]:
+            check(self.refunds(task["id"]) == 1, "扩展成功任务退款不为1")
+        check(self.refunds(queued["id"]) == 0, "扩展取消任务仍退款")
+        combined = self.call("GET", "/v1/runs/summary?limit=1")
+        check(combined["totals"]["tasks"] == before_totals["tasks"] + 4
+              and combined["totals"]["known_tokens"]["total_tokens"] == before_totals["known_tokens"]["total_tokens"] + 30,
+              "跨Agent汇总重复或遗漏")
+        return {"cases": self.results, "extended_agent": aid, "extended_tasks": 4, "extended_refunds": 3,
+                "extended_tokens": 30, "combined_tasks": combined["totals"]["tasks"],
+                "combined_tokens": combined["totals"]["known_tokens"]["total_tokens"]}
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host-binary", required=True, type=Path)
     parser.add_argument("--postgres-container", required=True)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--extended", action="store_true", help="在原8组案例后追加12组功能与边界案例")
     args = parser.parse_args()
     check(bool(os.environ.get("GOAGENT_PGSTORE_DSN")), "必须设置专用案例数据库GOAGENT_PGSTORE_DSN")
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -255,6 +443,8 @@ def main():
             check(address is not None, f"案例宿主启动失败：{ready}；诊断见{stderr_path}")
             cases = Cases("http://" + address.group(0), args.postgres_container)
             result.update(cases.run())
+            if args.extended:
+                result.update(cases.run_extended())
             result["status"] = "passed"
             exit_code = 0
         except Exception as error:

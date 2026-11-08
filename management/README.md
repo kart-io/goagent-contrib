@@ -17,7 +17,7 @@
 
 ## 联合开发与验证
 
-必须使用包含新 management 包的 GoAgent 源码；v0.50.0 没有该包。本模块已锁定实际迁移提交 `db7fffed9a84` 对应的 Go 伪版本；它目前仅存在本地，须先将该提交推送到核心远端，外部消费者才能下载。远端 CI 同样锁定该核心提交。当前跨仓验证显式使用临时 workspace，不在核心提交本机路径或旧接口回退。
+必须使用包含新 management 包的 GoAgent 源码；v0.50.0 没有该包。本模块已锁定当前修复提交 `6747dc0b0d73` 对应的 Go 伪版本；它目前仅存在本地，须先将该提交推送到核心远端，外部消费者才能下载。远端 CI 同样锁定该核心提交。当前跨仓验证显式使用临时 workspace，不在核心提交本机路径或旧接口回退。
 
 ```bash
 # 在 contrib 根目录运行；先准备专用 Postgres 17.6 并等待就绪。
@@ -32,3 +32,17 @@ bash scripts/with-local-modules.sh go -C management run ./examples/host -migrate
 宿主认证通过 Authorization Bearer local-demo；生产接入必须替换可信身份和 Authorizer。所有创建/命令使用 Idempotency-Key，修订更新使用 expected_revision。领域错误改为核心 `errors.ErrManagement*`；JSON 类型与编解码采用核心 `codec/json`。
 
 未设置 DSN 的测试跳过不构成持久验收；数据库重启和同步提交故障测试只允许在指定专用容器执行。原 pgstore 相对开发绑定仍保留在扩展模块，不进入核心依赖图。
+
+## 扩展功能案例
+
+在原8组退款HTTP基线上，`--extended` 增加12组功能与边界案例，共20组。覆盖注册幂等、配置不可覆盖与大整数、发布失败/CAS、显式旧版本、列表游标、非法输入、同会话排队取消、终态保护、历史分页、精确轮次Fork和停用Fork。支持在同一专用数据库重复运行，跨Agent汇总按本轮增量核对。
+
+```bash
+export GOAGENT_CASE_DIR="$PWD/.claude/management-expanded"
+mkdir -p "$GOAGENT_CASE_DIR"
+bash scripts/with-local-modules.sh go -C management build -o "$GOAGENT_CASE_DIR/host" ./examples/host
+python3 management/examples/host/test_cases.py --extended --host-binary "$GOAGENT_CASE_DIR/host" --postgres-container "$GOAGENT_CASE_CONTAINER" --output "$GOAGENT_CASE_DIR/http.json"
+bash scripts/with-local-modules.sh go -C management test -race -count=1 -run '^TestExpanded' ./integration
+```
+
+运行前沿用上文设置GOAGENT_CORE_ROOT、GOAGENT_PGSTORE_DSN；GOAGENT_CASE_CONTAINER必须指向同一个专用Postgres。四项新增数据库业务案例验证：停用Fork及启用后重试、跨租户同幂等键隔离、容量拒绝在取消释放后重新接纳、普通输入等待在重建宿主后续跑（含无效输入拒绝和SQL效果一次）。

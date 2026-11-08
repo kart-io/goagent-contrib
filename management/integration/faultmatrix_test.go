@@ -173,6 +173,12 @@ func TestRestartAtEveryCommitBoundary(t *testing.T) {
 	for _, stage := range []string{"admission", "create_log", "answer_before", "answer_after", "turn_end", "outcome", "sql_before", "sql_after", "effect_after_apply", "effect_after_apply_cancel"} {
 		t.Run(stage, func(t *testing.T) {
 			f := setup(t, nil)
+			t.Cleanup(func() {
+				if t.Failed() {
+					owner, err := f.store.Get(f.ctx, "workers", "__system", "default")
+					t.Logf("失败后的worker记录=%s，查询错误=%v", owner.Data, err)
+				}
+			})
 			_, err := f.pool.Exec(f.ctx, `CREATE TABLE mg_case_counters(tenant text,kind text,n integer,PRIMARY KEY(tenant,kind))`)
 			require.NoError(t, err)
 			agent, _ := f.agent(t)

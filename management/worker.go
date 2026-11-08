@@ -151,6 +151,10 @@ func (w *Worker) Run(parent context.Context) (runErr error) {
 		runErr = errors.Join(runErr, w.owner(cleanup, true))
 	}()
 	if err := w.recover(ctx); err != nil {
+		// 恢复扫描收到关闭信号时按主循环正常退出，真实恢复错误仍交给宿主。
+		if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
+			return nil
+		}
 		return err
 	}
 	tick := time.NewTicker(20 * time.Millisecond)

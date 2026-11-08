@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 	mg "github.com/kart-io/goagent-contrib/management"
 	"github.com/kart-io/goagent-contrib/management/adapters"
+	"github.com/kart-io/goagent/constants"
 	"github.com/kart-io/goagent/workflow"
 	"github.com/stretchr/testify/require"
 	"sync/atomic"
@@ -34,10 +35,10 @@ func TestGraphDecisionAfterLostAck(t *testing.T) {
 				}); e != nil {
 					return nil, nil, e
 				}
-				if e := g.AddEdge("__start__", "review"); e != nil {
+				if e := g.AddEdge(constants.WorkflowStart, "review"); e != nil {
 					return nil, nil, e
 				}
-				if e := g.AddEdge("review", "__end__"); e != nil {
+				if e := g.AddEdge("review", constants.WorkflowEnd); e != nil {
 					return nil, nil, e
 				}
 				compiled, e := g.CompileDurable(ctx, workflow.DurableConfig{Store: r.Journal, Version: v.ConfigHash, ApprovalNodes: []string{"review"}}, workflow.WithResumeHandler(func(_ context.Context, _ string, snap *workflow.GraphSnapshot[reviewState], raw json.RawMessage) (reviewState, error) {

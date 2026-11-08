@@ -1,3 +1,5 @@
+> 后续更新：旧兼容基线决策已取消，见[当前接口验证记录](../current-api-verification.md)。下文为首轮执行的历史账本。
+
 # SDD ledger — plan: /Users/costalong/code/go/src/github.com/kart/goagent/docs/superpowers/plans/2026-11-08-unified-management.md
 
 T0–T10：执行中。

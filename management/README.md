@@ -11,7 +11,7 @@
 
 ## 运行退款案例
 
-准备专用本地数据库。以下密码只用于本地案例容器。
+以下命令均在 contrib 仓库根目录运行，使用现有脚本装配同仓当前模块。准备专用本地数据库，以下密码只用于本地案例容器。
 
 ```bash
 docker run -d --name goagent-management-demo \
@@ -19,7 +19,7 @@ docker run -d --name goagent-management-demo \
   -p 127.0.0.1:55439:5432 postgres:17.6-alpine
 
 export GOAGENT_PGSTORE_DSN='postgres://postgres:management-local@127.0.0.1:55439/postgres?sslmode=disable'
-GOWORK=off go run ./examples/host -migrate -verify -listen 127.0.0.1:0
+bash scripts/with-local-modules.sh go -C management run ./examples/host -migrate -verify -listen 127.0.0.1:0
 ```
 
 等待 `docker exec goagent-management-demo pg_isready -U postgres` 成功后运行 Go 命令。`-migrate` 明确授权案例初始化管理表、GoAgent 日志表和案例业务表；普通服务构造器不会隐式改表。
@@ -29,7 +29,7 @@ GOWORK=off go run ./examples/host -migrate -verify -listen 127.0.0.1:0
 保留服务供手动操作：
 
 ```bash
-GOWORK=off go run ./examples/host -listen 127.0.0.1:8097
+bash scripts/with-local-modules.sh go -C management run ./examples/host -listen 127.0.0.1:8097
 ```
 
 案例通过 `Authorization: Bearer local-demo` 生成固定可信操作者；可用 `GOAGENT_DEMO_TOKEN` 修改。生产宿主必须替换身份认证和 Authorizer，不能把客户端 TenantID、ActorID 或内部恢复键当作可信输入。
@@ -58,17 +58,21 @@ Session 创建/Fork 返回 202 preparing，ready 后才可提交 Task。Fork 限
 
 ```bash
 export GOAGENT_PGSTORE_DSN='postgres://postgres:management-local@127.0.0.1:55439/postgres?sslmode=disable'
-GOWORK=off go test -race -count=1 -timeout 180s ./...
-GOWORK=off go vet ./...
+bash scripts/with-local-modules.sh go -C management test -race -count=1 -timeout 180s ./...
+bash scripts/with-local-modules.sh go -C management vet ./...
 ```
 
-未设置 DSN 时数据库测试会 SKIP，不构成持久恢复验收。测试为组合案例创建独立 schema 并清理；进程恢复测试会启动并终止自身的测试子进程，不操作宿主已有 worker。`harness/` 是独立模块，需要在该目录单独执行同样的测试与 vet。
-
-本模块的发布依赖保持可下载的兼容基线；验证当前 GoAgent v0.50.0 源码和同仓库 pgstore 时，使用仓库现有临时 workspace：
+未设置 DSN 时数据库测试会 SKIP，不构成持久恢复验收。测试为组合案例创建独立 schema 并清理；进程恢复测试会启动并终止自身的测试子进程，不操作宿主已有 worker。`management/harness` 是独立模块，另行验证：
 
 ```bash
-GOAGENT_CORE_ROOT=/path/to/goagent bash scripts/with-local-modules.sh bash -c \
-  'cd management && go test -race -count=1 ./...'
+bash scripts/with-local-modules.sh go -C management/harness test -race -count=1 ./...
+bash scripts/with-local-modules.sh go -C management/harness vet ./...
 ```
 
-上条命令在 contrib 仓库根目录运行，核心路径由实际克隆目录替换，不向 go.mod 写入机器绝对路径 replace。本模块尚未发布，不能把工作树验证描述为已经能从远端安装新模块。
+## 依赖与发布
+
+仅支持 GoAgent v0.50.0 当前接口，直接使用 `constants` 中的 Session 事件与工作流端点常量，不保留旧版接口适配或依赖回退。Agent 配置版本、会话固定版本与 Fork 继承仍是管理服务的业务功能。
+
+当前 pgstore 的常量迁移尚未发布，开发、案例和验收统一使用上述同仓源码 workspace。`go.mod` 中 pgstore 仍记录真实存在的发布版本，不能据此使用旧 pgstore 单独构建管理模块；正式发布必须先发布迁移后的 pgstore，再更新 management 的版本锁定并发布。本模块尚未发布，不使用虚构版本或路径 replace。
+
+需要联调本地核心源码时，可在命令前设置 `GOAGENT_CORE_ROOT=/path/to/goagent`；否则使用锁定的 GoAgent v0.50.0。两者使用同一套当前接口，不提供旧版依赖验收入口。本次清理与验证见[当前接口验证记录](docs/current-api-verification.md)。

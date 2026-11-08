@@ -1,5 +1,7 @@
 # 统一管理服务实施与验证报告
 
+> 本文保留首轮交付的历史结果。用户随后取消旧版兼容要求；双依赖基线与取舍第 8 项已被[当前接口验证记录](current-api-verification.md)取代，复跑以更新后的 README 和验收案例为准。
+
 日期：2026-11-08。结论：首批管理服务已实现并通过本地验收，保留在 `feature/unified-management` 分支。
 
 验证源码提交：`de0bb5fb78b0e6e80b2d29e5e19d29e8032f3d2b`。后续文档提交不改变该实现。机器可读结果见[验证汇总](validation/summary.json)与[退款案例输出](validation/example-result.json)。

@@ -102,6 +102,6 @@ func TestHostRegisterPublishSessionTaskApprovalResume(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, history.Items)
 	for _, ev := range history.Items {
-		require.NotEqual(t, "boundary/snapshot", ev.Type)
+		require.NotEqual(t, constants.SessionEventBoundarySnapshot, ev.Type)
 	}
 }

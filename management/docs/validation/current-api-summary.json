@@ -1,0 +1,77 @@
+{
+  "日期": "2026-11-08",
+  "验证对象": "feature/unified-management 本次当前接口清理工作树，基于 d9ec65d",
+  "核心接口": "GoAgent v0.50.0",
+  "pgstore": "同仓 durable/pgstore 当前源码",
+  "测试": {
+    "management": {
+      "通过测试事件数": 43,
+      "失败数": 0,
+      "跳过测试数": 0,
+      "通过案例": [
+        "TestReconciliationEvidencePersistedAndApplied",
+        "TestReviewCancelWaitingRace",
+        "TestReviewUnknownEvidence",
+        "TestCompletedEvidenceWinsRecoveredCancel",
+        "TestOutboxOwnerHasRecoveryProtocol",
+        "TestReconciliationCannotBeAcceptedWithoutProtocol",
+        "TestIdempotencyHashPreservesNumbers",
+        "TestTaskTransitionRejectsTerminalResume",
+        "TestDefaultsAndLimits",
+        "TestCrossTenantReferencesRejected",
+        "TestNativeApprovalAfterRestart/approve",
+        "TestNativeApprovalAfterRestart/reject",
+        "TestNativeApprovalAfterRestart",
+        "TestParallelApprovalsStayIsolated",
+        "TestCompletedRunRebuildsOutcomeReadOnly",
+        "TestReviewGraphLostConfirmationAtNextGate",
+        "TestBodyLimitAndDuplicateKeys",
+        "TestPublicProjectionPreservesBusinessKeys",
+        "TestOpenAPIRoutesMatchHandler",
+        "TestReviewGraphInputValidation",
+        "TestAdmissionRollsBackAllRecords",
+        "TestPaginationAppliesVisibilityBeforeLimit",
+        "TestHostRegisterPublishSessionTaskApprovalResume",
+        "TestForkSourceAndTargetIsolated",
+        "TestGraphDecisionAfterLostAck/approve",
+        "TestGraphDecisionAfterLostAck/reject",
+        "TestGraphDecisionAfterLostAck",
+        "TestAllManagementRoutes",
+        "TestClientDisconnectDoesNotCancelAcceptedTask",
+        "TestNativeInspectCompletedDoesNotRepeatModel",
+        "TestCancelRequestWaitsForRealExit",
+        "TestSameSessionNeverOverlaps",
+        "TestSecondWorkerRejected",
+        "TestConcurrentDecisionsHaveOneWinner",
+        "TestRejectDoesNotExecuteEffect",
+        "TestNotifyFailureDoesNotRerunTask",
+        "TestRecoveryChild",
+        "TestForkCrashAfterLogCopy",
+        "TestApprovalSurvivesProcessKillAndRestart",
+        "TestVersionCannotBeOverwritten",
+        "TestSessionKeepsPublishedVersion",
+        "TestSubmitTaskReturnsAfterDurableAcceptance",
+        "TestQueuedCancelNeverBuildsRuntime"
+      ],
+      "无测试文件的包": [
+        "github.com/kart-io/goagent-contrib/management/examples/host"
+      ]
+    },
+    "harness": {
+      "通过测试事件数": 1,
+      "失败数": 0,
+      "跳过测试数": 0,
+      "通过案例": [
+        "TestOutboxRedeliveryKeepsDeliveryID"
+      ],
+      "无测试文件的包": []
+    }
+  },
+  "其他检查": {
+    "management vet": "通过",
+    "harness vet": "通过",
+    "management golangci-lint v2.15.0": "0 issues",
+    "harness golangci-lint v2.15.0": "0 issues",
+    "旧核心直接依赖和协议字符串扫描": "通过"
+  }
+}

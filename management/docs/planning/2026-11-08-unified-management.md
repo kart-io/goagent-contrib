@@ -1,5 +1,7 @@
 # 统一管理服务实施计划
 
+> 后续决策：用户已取消旧版兼容要求。本文命令属于原计划归档；当前统一采用 GoAgent v0.50.0 与同仓 pgstore，执行入口以[模块 README](../../README.md)和[当前接口验证记录](../current-api-verification.md)为准。
+
 > 执行更新（2026-11-08）：用户已授权执行，首批实现与案例验收已完成，见[实施结果](../VERIFICATION.md)。原规划与调研文字保留作为基线，实际接口调整、合并测试和未覆盖边界以实施报告为准。
 > **面向执行者：**按任务使用 `superpowers:executing-plans` 实施；只有明确选择并行代理执行时才使用 `superpowers:subagent-driven-development`。每个任务完成本地验证后再进入依赖它的任务。本轮只交付文档，不执行下列开发步骤。
 

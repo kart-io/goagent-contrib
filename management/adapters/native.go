@@ -9,6 +9,7 @@ import (
 	"fmt"
 	mg "github.com/kart-io/goagent-contrib/management"
 	"github.com/kart-io/goagent/builder"
+	"github.com/kart-io/goagent/constants"
 	"github.com/kart-io/goagent/core/budget"
 	"github.com/kart-io/goagent/core/durable"
 	"github.com/kart-io/goagent/core/session"
@@ -102,14 +103,14 @@ func (n *native) Inspect(ctx context.Context, spec mg.RunSpec) (mg.RunEvidence, 
 	completed := false
 	for _, ev := range events {
 		switch ev.Type {
-		case "turn/start":
+		case constants.SessionEventTurnStart:
 			var turn session.TurnStart
 			if json.Unmarshal(ev.Data, &turn) != nil {
 				return mg.RunEvidence{}, mg.ErrInvalid
 			}
 			active = turn.ExecutionKey == spec.Task.ExecutionKey
 			completed = false
-		case "turn/end":
+		case constants.SessionEventTurnEnd:
 			var end session.TurnEnd
 			if json.Unmarshal(ev.Data, &end) != nil {
 				return mg.RunEvidence{}, mg.ErrInvalid

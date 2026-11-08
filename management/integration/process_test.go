@@ -8,6 +8,7 @@ import (
 	mg "github.com/kart-io/goagent-contrib/management"
 	"github.com/kart-io/goagent-contrib/management/adapters"
 	"github.com/kart-io/goagent/builder"
+	"github.com/kart-io/goagent/constants"
 	coreSession "github.com/kart-io/goagent/core/session"
 	"github.com/kart-io/goagent/interfaces"
 	"github.com/kart-io/goagent/llm"
@@ -114,9 +115,9 @@ func TestForkCrashAfterLogCopy(t *testing.T) {
 	}, 8*time.Second, 20*time.Millisecond)
 	require.NoError(t, first.Process.Signal(os.Interrupt))
 	require.NoError(t, first.Wait())
-	startEvent, e := coreSession.NewEvent("turn/start", coreSession.TurnStart{Input: "导入会话", ExecutionKey: "imported-turn"})
+	startEvent, e := coreSession.NewEvent(constants.SessionEventTurnStart, coreSession.TurnStart{Input: "导入会话", ExecutionKey: "imported-turn"})
 	require.NoError(t, e)
-	endEvent, e := coreSession.NewEvent("turn/end", coreSession.TurnEnd{Answer: "已完成"})
+	endEvent, e := coreSession.NewEvent(constants.SessionEventTurnEnd, coreSession.TurnEnd{Answer: "已完成"})
 	require.NoError(t, e)
 	events, e := f.cfg.Sessions.Read(f.ctx, se.LogID, 0)
 	require.NoError(t, e)

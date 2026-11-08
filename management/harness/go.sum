@@ -48,8 +48,8 @@ github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 h1:/Tnpcb2E0Pz/tN9s3bfEY2Q8ePC
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0/go.mod h1:zOBXOsUaBSjKgmH4OGzV1esUpR3oUSCPYVd2cUBjKYY=
 github.com/invopop/jsonschema v0.14.0 h1:MHQqLhvpNUZfw+hM3AZDYK7jxO8FZoQeQM77g8iyZjg=
 github.com/invopop/jsonschema v0.14.0/go.mod h1:ygm6C2EaVNMBDPpaPlnOA2pFAxBnxGjFlMZABxm9n2I=
-github.com/kart-io/goagent v0.49.3-0.20261107151110-dae60f4779d4 h1:xB7C1S4ZonTq39Kpl2wQ5W3Obn/Bbm26XBAMPQJN5/8=
-github.com/kart-io/goagent v0.49.3-0.20261107151110-dae60f4779d4/go.mod h1:oOPeUKvkReCaag5//AtZZCqY0G5u/OS7cP3xemcnYuI=
+github.com/kart-io/goagent v0.50.0 h1:W9uaRpk0yJ/msthVZ+rOfqZXZeOsbnz4yn/E4ftDZAA=
+github.com/kart-io/goagent v0.50.0/go.mod h1:oOPeUKvkReCaag5//AtZZCqY0G5u/OS7cP3xemcnYuI=
 github.com/kart-io/goagent-harness v0.0.0-20261107151558-367330b21947 h1:DdlQ5zMs/ToDlErhspkkHBLObDtCc+T5F32SKsVk51s=
 github.com/kart-io/goagent-harness v0.0.0-20261107151558-367330b21947/go.mod h1:sf+uvf78vtDvbMrfApavzS2fFyS1Bwwj9BqcmrWzf9I=
 github.com/kart-io/logger v0.2.2 h1:YLTNkqR4nL5z1nvPbmSfhY3WvodVIYwFoml+JWgvNl8=

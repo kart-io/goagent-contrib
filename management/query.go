@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"github.com/kart-io/goagent/constants"
 	"github.com/kart-io/goagent/core/budget"
 	"github.com/kart-io/goagent/core/session"
 	"strings"
@@ -177,7 +178,7 @@ func (s *Service) History(ctx context.Context, a Actor, r HistoryRequest) (Histo
 		return HistoryPage{}, ErrInvalid
 	}
 	for _, typ := range r.Types {
-		if typ == "boundary/snapshot" || strings.HasPrefix(typ, "management/") {
+		if typ == constants.SessionEventBoundarySnapshot || strings.HasPrefix(typ, "management/") {
 			return HistoryPage{}, ErrForbidden
 		}
 	}

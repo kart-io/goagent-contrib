@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	mg "github.com/kart-io/goagent-contrib/management"
+	"github.com/kart-io/goagent/constants"
 	"github.com/kart-io/goagent/core/durable"
 	"github.com/kart-io/goagent/workflow"
 	"testing"
@@ -22,7 +23,7 @@ func TestReviewGraphLostConfirmationAtNextGate(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
-	for _, x := range [][2]string{{"__start__", "a"}, {"a", "b"}, {"b", "__end__"}} {
+	for _, x := range [][2]string{{constants.WorkflowStart, "a"}, {"a", "b"}, {"b", constants.WorkflowEnd}} {
 		if e = g.AddEdge(x[0], x[1]); e != nil {
 			t.Fatal(e)
 		}
@@ -60,8 +61,8 @@ func TestReviewGraphInputValidation(t *testing.T) {
 		_, e := durable.AwaitInput(ctx, "amount", json.RawMessage(`{}`), func(raw json.RawMessage) error { return fmt.Errorf("invalid amount") })
 		return s, e
 	})
-	g.AddEdge("__start__", "ask")
-	g.AddEdge("ask", "__end__")
+	g.AddEdge(constants.WorkflowStart, "ask")
+	g.AddEdge("ask", constants.WorkflowEnd)
 	compiled, e := g.CompileDurable(ctx, workflow.DurableConfig{Store: store, Version: "v1"})
 	if e != nil {
 		t.Fatal(e)

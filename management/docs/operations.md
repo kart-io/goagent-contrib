@@ -6,7 +6,7 @@
 
 `management/pgstore.Migrate` 只初始化/校验独立管理表，`New` 只核对 schema 版本。会话表与 durable 表由既有 contrib pgstore schema 初始化。连接池直连可写主库；pgstore 租约、同步提交和旧主隔离要求仍然有效，管理模块不削弱这些约束。
 
-当前源码兼容调整把 contrib pgstore 升到 GoAgent v0.50.0 的 Session 事件常量。management 的发布依赖仍使用可下载的旧兼容组合；仓库 workspace 会选择当前 pgstore 与核心源码。正式发布前先发布修改后的 pgstore，再更新 management 依赖锁定并重复两套验证。
+management 与可选 Harness 模块仅支持 GoAgent v0.50.0 当前接口，直接引用核心常量，不保留旧版适配与依赖回退。开发与验收使用仓库既有 workspace 装配同仓 pgstore；正式发布前先发布已迁移的 pgstore，再更新 management 的真实依赖版本并验证当前接口。Agent 配置版本与会话版本绑定属于业务能力，不受此依赖策略影响。
 
 ## 身份、权限与版本
 

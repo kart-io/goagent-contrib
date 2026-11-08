@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	mg "github.com/kart-io/goagent-contrib/management"
+	"github.com/kart-io/goagent/constants"
 	"strings"
 	"time"
 )
@@ -253,7 +254,7 @@ func (s *Store) History(ctx context.Context, id string, after int64, limit int, 
 	if limit < 1 || limit > 200 {
 		return out, mg.ErrInvalid
 	}
-	rows, err := s.pool.Query(ctx, `SELECT seq,event FROM goagent_session_event WHERE session_id=$1 AND seq>$2 AND type<>'boundary/snapshot' AND type NOT LIKE 'management/%' AND (COALESCE(cardinality($4::text[]),0)=0 OR type=ANY($4::text[])) ORDER BY seq LIMIT $3`, id, after, limit, types)
+	rows, err := s.pool.Query(ctx, `SELECT seq,event FROM goagent_session_event WHERE session_id=$1 AND seq>$2 AND type<>$5 AND type NOT LIKE 'management/%' AND (COALESCE(cardinality($4::text[]),0)=0 OR type=ANY($4::text[])) ORDER BY seq LIMIT $3`, id, after, limit, types, constants.SessionEventBoundarySnapshot)
 	if err != nil {
 		return out, err
 	}

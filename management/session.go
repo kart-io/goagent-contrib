@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/kart-io/goagent/constants"
 	"github.com/kart-io/goagent/core/session"
 	agentErrors "github.com/kart-io/goagent/errors"
 )
@@ -76,7 +77,7 @@ func (s *Service) ForkSession(ctx context.Context, a Actor, r ForkSessionRequest
 		seq := r.UpTo
 		valid := false
 		for _, ev := range events {
-			if ev.Type == "turn/end" {
+			if ev.Type == constants.SessionEventTurnEnd {
 				var end session.TurnEnd
 				if json.Unmarshal(ev.Data, &end) == nil && !end.Aborted && (r.UpTo == 0 || ev.Seq == r.UpTo) {
 					seq = ev.Seq

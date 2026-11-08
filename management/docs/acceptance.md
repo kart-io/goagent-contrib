@@ -1,11 +1,11 @@
 # 统一管理服务验证案例
 
-使用专用本地 Postgres 17，设置 `GOAGENT_PGSTORE_DSN`。完整案例命令见[模块 README](../README.md)。测试不依赖模型网络或密钥；Agent 循环、工具、审批、日志、预算、HTTP 与数据库都使用真实组件。
+以下命令均从 contrib 仓库根目录运行，使用当前同仓源码 workspace。使用专用本地 Postgres 17，设置 `GOAGENT_PGSTORE_DSN`。完整案例命令见[模块 README](../README.md)。测试不依赖模型网络或密钥；Agent 循环、工具、审批、日志、预算、HTTP 与数据库都使用真实组件。
 
 ## 案例一：可运行退款客服
 
 ```bash
-GOWORK=off go run ./examples/host -migrate -verify -listen 127.0.0.1:0
+bash scripts/with-local-modules.sh go -C management run ./examples/host -migrate -verify -listen 127.0.0.1:0
 ```
 
 该命令启动实际 TCP HTTP 服务、持久 worker 和脚本模型，通过 API 完成注册、发布、会话、幂等提交、审批、退款、用量查询、版本切换与 Fork。成功输出包含：
@@ -27,7 +27,7 @@ GOWORK=off go run ./examples/host -migrate -verify -listen 127.0.0.1:0
 ## 案例二：审批后杀进程并恢复
 
 ```bash
-GOWORK=off go test -race -count=1 -v \
+bash scripts/with-local-modules.sh go -C management test -race -count=1 -v \
   -run TestApprovalSurvivesProcessKillAndRestart ./integration
 ```
 
@@ -38,7 +38,7 @@ GOWORK=off go test -race -count=1 -v \
 ## 案例三：Fork 复制后进程退出
 
 ```bash
-GOWORK=off go test -race -count=1 -v -run TestForkCrashAfterLogCopy ./integration
+bash scripts/with-local-modules.sh go -C management test -race -count=1 -v -run TestForkCrashAfterLogCopy ./integration
 ```
 
 子进程在底层 Fork 已提交、管理会话仍 preparing 时以退出码42终止。确认旧进程退出后，新进程比对复制前缀并补成 ready，目标日志前后完全一致，不覆盖源会话或再次追加复制内容。
@@ -46,7 +46,7 @@ GOWORK=off go test -race -count=1 -v -run TestForkCrashAfterLogCopy ./integratio
 ## 案例四：拒绝、竞争、取消与会话顺序
 
 ```bash
-GOWORK=off go test -race -count=1 -v \
+bash scripts/with-local-modules.sh go -C management test -race -count=1 -v \
   -run 'Test(RejectDoesNotExecuteEffect|ConcurrentDecisionsHaveOneWinner|CancelRequestWaitsForRealExit|SameSessionNeverOverlaps|SecondWorkerRejected)' ./integration
 ```
 
@@ -59,9 +59,9 @@ GOWORK=off go test -race -count=1 -v \
 ## 案例五：图审批、Fork 与协议
 
 ```bash
-GOWORK=off go test -race -count=1 -v \
+bash scripts/with-local-modules.sh go -C management test -race -count=1 -v \
   -run 'Test(GraphDecisionAfterLostAck|ForkSourceAndTargetIsolated|AllManagementRoutes|HostRegisterPublishSessionTaskApprovalResume)' ./integration
-GOWORK=off go test -race -count=1 ./httpapi ./pgstore
+bash scripts/with-local-modules.sh go -C management test -race -count=1 ./httpapi ./pgstore
 ```
 
 验证图的批准/拒绝分支、重复决定不重复效果、活动会话不能 Fork、分支历史隔离、HTTP 管理路由和持久计量。协议测试另外检查重复 JSON 键、未知字段、体积限制、内部键隐藏，以及业务字段不被错误脱敏。Postgres 单元测试验证事务回滚与权限过滤先于 LIMIT。

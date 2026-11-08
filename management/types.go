@@ -124,6 +124,8 @@ type Attempt struct {
 	TraceID    string     `json:"trace_id,omitempty"`
 }
 type WaitPoint struct {
+	Rejected    bool            `json:"rejected,omitempty"`
+	Reason      string          `json:"reason,omitempty"`
 	ID          string          `json:"id"`
 	Kind        string          `json:"kind"`
 	Key         string          `json:"key"`
@@ -133,6 +135,8 @@ type WaitPoint struct {
 	Epoch       int64           `json:"epoch"`
 }
 type Approval struct {
+	CommandID    string `json:"command_id,omitempty"`
+	CommandState string `json:"command_state,omitempty"`
 	Meta
 	TaskID    string     `json:"task_id"`
 	AgentID   string     `json:"agent_id"`
@@ -361,16 +365,17 @@ type DeliverySink interface {
 	Accept(context.Context, Delivery) error
 }
 type Config struct {
-	Store           Store
-	Sessions        session.Store
-	HistoryReader   HistoryReader
-	Authorizer      Authorizer
-	Factories       map[string]Factory
-	Reconciliations ReconciliationReader
-	Delivery        DeliverySink
-	Limits          Limits
-	Now             func() time.Time
-	Report          func(string, error)
+	ConfirmWorkerStopped func(context.Context, string, int64) error
+	Store                Store
+	Sessions             session.Store
+	HistoryReader        HistoryReader
+	Authorizer           Authorizer
+	Factories            map[string]Factory
+	Reconciliations      ReconciliationReader
+	Delivery             DeliverySink
+	Limits               Limits
+	Now                  func() time.Time
+	Report               func(string, error)
 }
 type HistoryReader interface {
 	History(context.Context, string, int64, int, []string) (HistoryPage, error)

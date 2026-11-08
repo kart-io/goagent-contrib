@@ -96,7 +96,29 @@ func (s *Service) auth(ctx context.Context, a Actor, action, kind, id string) er
 	if err := ValidateActor(a); err != nil {
 		return err
 	}
-	return s.cfg.Authorizer.Authorize(ctx, a, action, ResourceRef{Type: kind, ID: id, TenantID: a.TenantID})
+	ref := ResourceRef{Type: kind, ID: id, TenantID: a.TenantID}
+	if id != "" && kind != "workers" {
+		d, err := s.cfg.Store.Get(ctx, kind, a.TenantID, id)
+		if err != nil {
+			return err
+		}
+		var rel struct {
+			AgentID   string `json:"agent_id"`
+			SessionID string `json:"session_id"`
+		}
+		if err = json.Unmarshal(d.Data, &rel); err != nil {
+			return err
+		}
+		ref.AgentID = rel.AgentID
+		ref.SessionID = rel.SessionID
+		if kind == "agents" {
+			ref.AgentID = id
+		}
+		if kind == "sessions" {
+			ref.SessionID = id
+		}
+	}
+	return s.cfg.Authorizer.Authorize(ctx, a, action, ref)
 }
 func (s *Service) audit(ctx context.Context, tx Tx, a Actor, kind, id, op, reason string) error {
 	return insert(ctx, tx, "audit", Audit{Meta: s.meta(a), ResourceType: kind, ResourceID: id, Operation: op, Actor: a, Reason: reason})

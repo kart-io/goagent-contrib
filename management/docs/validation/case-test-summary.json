@@ -1,0 +1,82 @@
+{
+  "执行时间": "2026-11-08T15:44:44.159622+08:00",
+  "生产代码提交": "b52983a1cb617b2b7a8709a5171c46b6f87b42be",
+  "环境": {
+    "Go": "go1.27.3",
+    "Postgres": "17.6-alpine",
+    "构建": "GOWORK=off，同仓pgstore当前源码",
+    "模型": "离线脚本模型",
+    "接口": "真实TCP HTTP",
+    "副作用": "专用Postgres退款记录，无真实支付请求"
+  },
+  "内置退款案例": {
+    "Agent": "dc211c93-f407-4500-8873-b693b05d6542",
+    "Task": "8c2e3020-c159-4a80-a90b-336da109c6dd",
+    "Token": 10,
+    "分支版本": "v1",
+    "新会话版本": "v2",
+    "旧会话版本": "v1",
+    "结果": "v1：退款凭证已生成",
+    "退款次数": 1,
+    "重复提交复用任务": true,
+    "验证": "通过"
+  },
+  "黑盒HTTP案例": {
+    "状态": "passed",
+    "案例组数": 8,
+    "请求数": 121,
+    "宿主退出码": 0,
+    "业务任务数": 6,
+    "退款记录数": 4,
+    "退款金额": 200,
+    "Token合计": 55,
+    "事件数未变": true,
+    "日志摘要未变": true,
+    "案例": [
+      "未认证请求被拒绝",
+      "重复提交与审批绕过保护",
+      "批准与重复审批只退款一次",
+      "拒绝审批不退款",
+      "等待审批时取消且拒绝迟到批准",
+      "停用阻塞并在启用后沿用原决定",
+      "版本发布与Fork独立执行",
+      "只读查询和跨页汇总与数据库一致"
+    ]
+  },
+  "进程并发案例": {
+    "通过测试事件": 27,
+    "失败": 0,
+    "测试跳过": 0,
+    "通过用例": [
+      "TestRestartAtEveryCommitBoundary/admission",
+      "TestRestartAtEveryCommitBoundary/create_log",
+      "TestRestartAtEveryCommitBoundary/answer_before",
+      "TestRestartAtEveryCommitBoundary/answer_after",
+      "TestRestartAtEveryCommitBoundary/turn_end",
+      "TestRestartAtEveryCommitBoundary/outcome",
+      "TestRestartAtEveryCommitBoundary/sql_before",
+      "TestRestartAtEveryCommitBoundary/sql_after",
+      "TestRestartAtEveryCommitBoundary/effect_after_apply",
+      "TestRestartAtEveryCommitBoundary/effect_after_apply_cancel",
+      "TestRestartAtEveryCommitBoundary",
+      "TestOutboxCrashAfterRemoteAcceptanceKeepsStableDelivery",
+      "TestGraphDecisionAfterLostAck/approve",
+      "TestGraphDecisionAfterLostAck/reject",
+      "TestGraphDecisionAfterLostAck",
+      "TestCancelRequestWaitsForRealExit",
+      "TestSameSessionNeverOverlaps",
+      "TestConcurrentDecisionsHaveOneWinner",
+      "TestRunSummaryUsesSelfAndPreservesUnknownEvidence/known",
+      "TestRunSummaryUsesSelfAndPreservesUnknownEvidence/unknown",
+      "TestRunSummaryUsesSelfAndPreservesUnknownEvidence",
+      "TestForkCrashAfterLogCopy",
+      "TestApprovalSurvivesProcessKillAndRestart",
+      "TestReviewValidateHonorsShutdownDeadline",
+      "TestRevokedPermissionAndDisabledAgentKeepDecisionPending/permission",
+      "TestRevokedPermissionAndDisabledAgentKeepDecisionPending/disabled",
+      "TestRevokedPermissionAndDisabledAgentKeepDecisionPending"
+    ],
+    "包运行秒数": 46.189
+  },
+  "生产代码修改": "无，新增案例脚本与执行报告"
+}

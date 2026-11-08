@@ -4,6 +4,7 @@
 
 - [HTTP 接口](httpapi/openapi.yaml)：OpenAPI 3.1，文件采用 JSON 形式的合法 YAML。
 - [运行与恢复说明](docs/operations.md)：部署边界、权限、停服、异常 owner 回收与数据保留。
+- [本轮案例实测](docs/case-test-results.md)：8 组真实 HTTP 场景、SQL 核对和 27 个恢复/并发测试事件。
 - [验证案例](docs/acceptance.md)：真实 Postgres、HTTP、审批、取消、Fork 和跨进程恢复的复跑方式。
 - [审计修复与验收](docs/remediation-verification.md)：只读查询、观测汇总、权限阻塞、故障矩阵与当前构建方式。
 - [完成度复核归档](docs/completion-audit.md)：保留修复前发现、失败证据和需求缺口。

@@ -82,3 +82,7 @@ bash scripts/with-local-modules.sh go -C management test -race -count=1 -timeout
 进程故障矩阵覆盖接纳、创建日志、审批答复固定前后、轮次结束、完成信封和 SQL 终态前后。另在工具外部效果已经写入但尚未保存结果时退出：恢复必须 attention，模型请求 1 次、效果 1 次；已确认完成的其他断点则成功且模型 2 次、效果 1 次。通知接收后确认丢失时重投相同 ID，业务 Attempt 不增加。
 
 这些用例只终止测试自身子进程；不引入自动 owner 抢占。完整需求映射与本次结果见[修复报告](remediation-verification.md)。
+
+## 黑盒业务脚本
+
+[本轮案例实测](case-test-results.md)提供真实 TCP HTTP 的 8 组业务场景，以及 SQL 副作用和日志内容核对。可运行脚本为 [test_cases.py](../examples/host/test_cases.py)，不依赖第三方 Python 包；复跑命令与本次原始结果都在该报告中。

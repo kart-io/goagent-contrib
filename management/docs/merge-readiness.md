@@ -1,5 +1,7 @@
 # 统一管理服务合并检查
 
+后续状态：本地主线合并已完成，见 [主线合并结果](merge-result.md)。以下为合并前检查记录。
+
 检查日期：2026-11-08。受检提交：`2a237c7`；本轮新增改动仅为 CI 矩阵及检查记录，生产 Go 代码仍为 `3a029b9`。机器可读结果及复现命令见 [merge-readiness.json](validation/merge-readiness.json)。
 
 ## 结论

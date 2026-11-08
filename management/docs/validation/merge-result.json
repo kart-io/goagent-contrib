@@ -1,0 +1,571 @@
+{
+  "检查时间": "2026-11-08T16:52:51.966006+08:00",
+  "仓库": "goagent-contrib",
+  "目标分支": "master",
+  "合并基线": "634b5d8c242859e6842fa0e7d5aa4f32e2d35170",
+  "受检代码提交": "2bb146fdf44e45e0a4cb0faaf4649bbc9f0b6bfe",
+  "方式": "快进合并",
+  "已推送远端": false,
+  "原工作区修改": {
+    "文件数": 7,
+    "合并后逐字节保留": true,
+    "导入整理提交": "52444ba69b7f984860a0bd366a32fd75384a3eef",
+    "备份目录": ".git/merge-backups/unified-management-20261108-163850",
+    "备份stash": "40a6c4ce0e52b2f4b61d19b43e845b5a51f8f547"
+  },
+  "合并前全仓": {
+    "模块": [
+      "./acp",
+      "./document",
+      "./document/pdf",
+      "./durable/pgstore",
+      "./httpagent",
+      "./management",
+      "./management/harness",
+      "./retrieval/cohere",
+      "./retrieval",
+      "./retrieval/qdrant",
+      "./retrieval/vertexai",
+      "./tools/database",
+      "./tools/practical"
+    ],
+    "测试事件": {
+      "pass": 991,
+      "skip": 12
+    },
+    "分包事件": {
+      "github.com/kart-io/goagent-contrib/acp": {
+        "pass": 79
+      },
+      "github.com/kart-io/goagent-contrib/document": {
+        "pass": 85
+      },
+      "github.com/kart-io/goagent-contrib/document/pdf": {
+        "pass": 26,
+        "skip": 3
+      },
+      "github.com/kart-io/goagent-contrib/durable/pgstore": {
+        "pass": 79
+      },
+      "github.com/kart-io/goagent-contrib/httpagent": {
+        "pass": 50
+      },
+      "github.com/kart-io/goagent-contrib/management": {
+        "pass": 11
+      },
+      "github.com/kart-io/goagent-contrib/management/adapters": {
+        "pass": 7
+      },
+      "github.com/kart-io/goagent-contrib/management/httpapi": {
+        "pass": 3
+      },
+      "github.com/kart-io/goagent-contrib/management/integration": {
+        "pass": 66
+      },
+      "github.com/kart-io/goagent-contrib/management/pgstore": {
+        "pass": 4
+      },
+      "github.com/kart-io/goagent-contrib/management/harness": {
+        "pass": 5
+      },
+      "github.com/kart-io/goagent-contrib/retrieval/cohere": {
+        "pass": 15
+      },
+      "github.com/kart-io/goagent-contrib/retrieval": {
+        "pass": 296
+      },
+      "github.com/kart-io/goagent-contrib/retrieval/qdrant": {
+        "pass": 22,
+        "skip": 9
+      },
+      "github.com/kart-io/goagent-contrib/retrieval/vertexai": {
+        "pass": 2
+      },
+      "github.com/kart-io/goagent-contrib/tools/database": {
+        "pass": 137
+      },
+      "github.com/kart-io/goagent-contrib/tools/practical": {
+        "pass": 104
+      }
+    },
+    "失败测试": [],
+    "跳过测试": [
+      {
+        "包": "github.com/kart-io/goagent-contrib/document/pdf",
+        "测试": "TestPDFLoader_LoadRealPDF"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/document/pdf",
+        "测试": "TestPDFLoader_LoadAndSplit"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/document/pdf",
+        "测试": "TestPDFLoader_LoadByPage"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/retrieval/qdrant",
+        "测试": "TestRealQdrantRetrieveFilter"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/retrieval/qdrant",
+        "测试": "TestRealQdrantBusinessIDsAndMetadataRoundTrip"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/retrieval/qdrant",
+        "测试": "TestQdrantVectorStore_DocumentOperations"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/retrieval/qdrant",
+        "测试": "TestQdrantVectorStore_AddDocuments"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/retrieval/qdrant",
+        "测试": "TestQdrantVectorStore_Search"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/retrieval/qdrant",
+        "测试": "TestQdrantVectorStore_EmptyOperations"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/retrieval/qdrant",
+        "测试": "TestQdrantVectorStore_BatchOperations"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/retrieval/qdrant",
+        "测试": "TestQdrantVectorStore_ErrorCases"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/retrieval/qdrant",
+        "测试": "TestQdrantVectorStore_Close"
+      }
+    ]
+  },
+  "首次合并后全仓": {
+    "模块": [
+      "./acp",
+      "./document",
+      "./document/pdf",
+      "./durable/pgstore",
+      "./httpagent",
+      "./management",
+      "./management/harness",
+      "./retrieval/cohere",
+      "./retrieval",
+      "./retrieval/qdrant",
+      "./retrieval/vertexai",
+      "./tools/database",
+      "./tools/practical"
+    ],
+    "测试事件": {
+      "pass": 989,
+      "skip": 12,
+      "fail": 2
+    },
+    "分包事件": {
+      "github.com/kart-io/goagent-contrib/acp": {
+        "pass": 79
+      },
+      "github.com/kart-io/goagent-contrib/document": {
+        "pass": 85
+      },
+      "github.com/kart-io/goagent-contrib/document/pdf": {
+        "pass": 26,
+        "skip": 3
+      },
+      "github.com/kart-io/goagent-contrib/durable/pgstore": {
+        "pass": 79
+      },
+      "github.com/kart-io/goagent-contrib/httpagent": {
+        "pass": 50
+      },
+      "github.com/kart-io/goagent-contrib/management": {
+        "pass": 11
+      },
+      "github.com/kart-io/goagent-contrib/management/adapters": {
+        "pass": 7
+      },
+      "github.com/kart-io/goagent-contrib/management/httpapi": {
+        "pass": 3
+      },
+      "github.com/kart-io/goagent-contrib/management/integration": {
+        "pass": 64,
+        "fail": 2
+      },
+      "github.com/kart-io/goagent-contrib/management/pgstore": {
+        "pass": 4
+      },
+      "github.com/kart-io/goagent-contrib/management/harness": {
+        "pass": 5
+      },
+      "github.com/kart-io/goagent-contrib/retrieval/cohere": {
+        "pass": 15
+      },
+      "github.com/kart-io/goagent-contrib/retrieval": {
+        "pass": 296
+      },
+      "github.com/kart-io/goagent-contrib/retrieval/qdrant": {
+        "pass": 22,
+        "skip": 9
+      },
+      "github.com/kart-io/goagent-contrib/retrieval/vertexai": {
+        "pass": 2
+      },
+      "github.com/kart-io/goagent-contrib/tools/database": {
+        "pass": 137
+      },
+      "github.com/kart-io/goagent-contrib/tools/practical": {
+        "pass": 104
+      }
+    },
+    "失败测试": [
+      "TestRestartAtEveryCommitBoundary/sql_after",
+      "TestRestartAtEveryCommitBoundary"
+    ],
+    "跳过测试": [
+      {
+        "包": "github.com/kart-io/goagent-contrib/document/pdf",
+        "测试": "TestPDFLoader_LoadRealPDF"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/document/pdf",
+        "测试": "TestPDFLoader_LoadAndSplit"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/document/pdf",
+        "测试": "TestPDFLoader_LoadByPage"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/retrieval/qdrant",
+        "测试": "TestRealQdrantRetrieveFilter"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/retrieval/qdrant",
+        "测试": "TestRealQdrantBusinessIDsAndMetadataRoundTrip"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/retrieval/qdrant",
+        "测试": "TestQdrantVectorStore_DocumentOperations"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/retrieval/qdrant",
+        "测试": "TestQdrantVectorStore_AddDocuments"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/retrieval/qdrant",
+        "测试": "TestQdrantVectorStore_Search"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/retrieval/qdrant",
+        "测试": "TestQdrantVectorStore_EmptyOperations"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/retrieval/qdrant",
+        "测试": "TestQdrantVectorStore_BatchOperations"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/retrieval/qdrant",
+        "测试": "TestQdrantVectorStore_ErrorCases"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/retrieval/qdrant",
+        "测试": "TestQdrantVectorStore_Close"
+      }
+    ]
+  },
+  "发现并修复的问题": {
+    "症状": "TestRestartAtEveryCommitBoundary/sql_after子进程收到退出信号后因context canceled返回失败",
+    "原因": "已获取执行权的worker在启动恢复扫描中收到关闭信号，直接向上返回取消错误，与主循环正常关闭行为不一致",
+    "修复": "只将恢复扫描中与worker自身上下文结束相匹配的错误视为正常关闭；保留其他恢复错误并沿用原有执行权释放",
+    "提交": "2bb146fdf44e45e0a4cb0faaf4649bbc9f0b6bfe",
+    "定时序回归修复前": {
+      "模块": [],
+      "测试事件": {
+        "fail": 1,
+        "pass": 1
+      },
+      "分包事件": {
+        "github.com/kart-io/goagent-contrib/management/integration": {
+          "fail": 1,
+          "pass": 1
+        }
+      },
+      "失败测试": [
+        "TestShutdownDuringStartupRecoveryIsGraceful"
+      ],
+      "跳过测试": []
+    },
+    "定时序回归修复后10轮": {
+      "模块": [],
+      "测试事件": {
+        "pass": 20
+      },
+      "分包事件": {
+        "github.com/kart-io/goagent-contrib/management/integration": {
+          "pass": 20
+        }
+      },
+      "失败测试": [],
+      "跳过测试": []
+    },
+    "修复后管理全套": {
+      "模块": [],
+      "测试事件": {
+        "pass": 93
+      },
+      "分包事件": {
+        "github.com/kart-io/goagent-contrib/management": {
+          "pass": 11
+        },
+        "github.com/kart-io/goagent-contrib/management/adapters": {
+          "pass": 7
+        },
+        "github.com/kart-io/goagent-contrib/management/httpapi": {
+          "pass": 3
+        },
+        "github.com/kart-io/goagent-contrib/management/integration": {
+          "pass": 68
+        },
+        "github.com/kart-io/goagent-contrib/management/pgstore": {
+          "pass": 4
+        }
+      },
+      "失败测试": [],
+      "跳过测试": []
+    },
+    "备注": "原sql_after案例单独重复20轮未触发偶发竞态；新增真实数据库同步边界用例稳定呈现该恢复取消问题，先失败再通过。"
+  },
+  "主线最终全仓": {
+    "模块": [
+      "./acp",
+      "./document",
+      "./document/pdf",
+      "./durable/pgstore",
+      "./httpagent",
+      "./management",
+      "./management/harness",
+      "./retrieval/cohere",
+      "./retrieval",
+      "./retrieval/qdrant",
+      "./retrieval/vertexai",
+      "./tools/database",
+      "./tools/practical"
+    ],
+    "测试事件": {
+      "pass": 993,
+      "skip": 12
+    },
+    "分包事件": {
+      "github.com/kart-io/goagent-contrib/acp": {
+        "pass": 79
+      },
+      "github.com/kart-io/goagent-contrib/document": {
+        "pass": 85
+      },
+      "github.com/kart-io/goagent-contrib/document/pdf": {
+        "pass": 26,
+        "skip": 3
+      },
+      "github.com/kart-io/goagent-contrib/durable/pgstore": {
+        "pass": 79
+      },
+      "github.com/kart-io/goagent-contrib/httpagent": {
+        "pass": 50
+      },
+      "github.com/kart-io/goagent-contrib/management": {
+        "pass": 11
+      },
+      "github.com/kart-io/goagent-contrib/management/adapters": {
+        "pass": 7
+      },
+      "github.com/kart-io/goagent-contrib/management/httpapi": {
+        "pass": 3
+      },
+      "github.com/kart-io/goagent-contrib/management/integration": {
+        "pass": 68
+      },
+      "github.com/kart-io/goagent-contrib/management/pgstore": {
+        "pass": 4
+      },
+      "github.com/kart-io/goagent-contrib/management/harness": {
+        "pass": 5
+      },
+      "github.com/kart-io/goagent-contrib/retrieval/cohere": {
+        "pass": 15
+      },
+      "github.com/kart-io/goagent-contrib/retrieval": {
+        "pass": 296
+      },
+      "github.com/kart-io/goagent-contrib/retrieval/qdrant": {
+        "pass": 22,
+        "skip": 9
+      },
+      "github.com/kart-io/goagent-contrib/retrieval/vertexai": {
+        "pass": 2
+      },
+      "github.com/kart-io/goagent-contrib/tools/database": {
+        "pass": 137
+      },
+      "github.com/kart-io/goagent-contrib/tools/practical": {
+        "pass": 104
+      }
+    },
+    "失败测试": [],
+    "跳过测试": [
+      {
+        "包": "github.com/kart-io/goagent-contrib/document/pdf",
+        "测试": "TestPDFLoader_LoadRealPDF"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/document/pdf",
+        "测试": "TestPDFLoader_LoadAndSplit"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/document/pdf",
+        "测试": "TestPDFLoader_LoadByPage"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/retrieval/qdrant",
+        "测试": "TestRealQdrantRetrieveFilter"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/retrieval/qdrant",
+        "测试": "TestRealQdrantBusinessIDsAndMetadataRoundTrip"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/retrieval/qdrant",
+        "测试": "TestQdrantVectorStore_DocumentOperations"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/retrieval/qdrant",
+        "测试": "TestQdrantVectorStore_AddDocuments"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/retrieval/qdrant",
+        "测试": "TestQdrantVectorStore_Search"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/retrieval/qdrant",
+        "测试": "TestQdrantVectorStore_EmptyOperations"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/retrieval/qdrant",
+        "测试": "TestQdrantVectorStore_BatchOperations"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/retrieval/qdrant",
+        "测试": "TestQdrantVectorStore_ErrorCases"
+      },
+      {
+        "包": "github.com/kart-io/goagent-contrib/retrieval/qdrant",
+        "测试": "TestQdrantVectorStore_Close"
+      }
+    ]
+  },
+  "静态检查与构建": {
+    "合并前13模块vet": "通过",
+    "合并前13模块lint": "v2.15.0全部0 issues",
+    "修复后management_vet_lint": "通过，0 issues",
+    "主线最终13模块vet": "通过",
+    "主线management独立构建": "GOWORK=off通过"
+  },
+  "合并后HTTP案例": {
+    "状态": "passed",
+    "案例组数": 8,
+    "请求数": 129,
+    "宿主退出码": 0,
+    "案例": [
+      {
+        "案例": "未认证请求被拒绝",
+        "结果": "通过",
+        "HTTP": 401
+      },
+      {
+        "案例": "重复提交与审批绕过保护",
+        "结果": "通过",
+        "Task": "314ca175-81bf-4946-8d9c-315df3c7b549",
+        "重投复用任务": true,
+        "同键不同内容HTTP": 409,
+        "绕过审批HTTP": 409,
+        "审批前退款": 0
+      },
+      {
+        "案例": "批准与重复审批只退款一次",
+        "结果": "通过",
+        "Task": "314ca175-81bf-4946-8d9c-315df3c7b549",
+        "退款次数": 1,
+        "决定复用": true,
+        "迟到反向决定HTTP": 409,
+        "处理人": "案例审批人"
+      },
+      {
+        "案例": "拒绝审批不退款",
+        "结果": "通过",
+        "Task": "8724d6ed-b806-4a37-aaa3-bb87ab7b5680",
+        "退款次数": 0,
+        "业务答复": "v1：审批拒绝，未执行退款"
+      },
+      {
+        "案例": "等待审批时取消且拒绝迟到批准",
+        "结果": "通过",
+        "Task": "da305c9d-86f2-4f5c-9b63-a4103d2de18c",
+        "状态": "canceled",
+        "退款次数": 0,
+        "迟到批准HTTP": 409
+      },
+      {
+        "案例": "停用阻塞并在启用后沿用原决定",
+        "结果": "通过",
+        "Task": "804a05eb-0910-444c-a1fe-5dd758d3770b",
+        "阻塞原因": "agent_disabled",
+        "停用期间退款": 0,
+        "启用后退款": 1,
+        "决定时间未变": true
+      },
+      {
+        "案例": "版本发布与Fork独立执行",
+        "结果": "通过",
+        "旧会话版本": "v1",
+        "新会话版本": "v2",
+        "分支版本": "v1",
+        "源历史未变": true,
+        "分支任务": "fe7d28b3-abc9-445c-8fbb-3c7dd7f81f9a"
+      },
+      {
+        "案例": "只读查询和跨页汇总与数据库一致",
+        "结果": "通过",
+        "查询前事件数": 30,
+        "查询后事件数": 30,
+        "日志内容摘要未变": true,
+        "任务数": 6,
+        "Token": 55,
+        "退款次数": 4,
+        "退款总额": 200,
+        "状态": {
+          "canceled": 1,
+          "succeeded": 5
+        }
+      }
+    ]
+  },
+  "跳过说明": "12项为3项缺少PDF样例和9项未配置Qdrant服务的既有测试；本次修改涉及的management、Harness、ACP和pgstore测试均实际执行且无跳过。计数含父测试和子用例。",
+  "本地原始证据SHA256": {
+    "premerge-tests.jsonl": "6528c3938ed4feb9ed3e4ac694939acbc9d83fc24f970e5ff99eac50310bdf7d",
+    "premerge-lint.log": "e446cdf2dca87e038a03244604b1e6d9bc44c9283d5d4990e12add4e0c812bf5",
+    "postmerge-tests.jsonl": "88f48ea8703a78fc9ea3224ea907f7f9bdf43cb1489f6b2a8d6015f99cd681d5",
+    "startup-diagnostic.jsonl": "7c2b20cda80f15d41b7bddda5475b533462802b77f3708a2a9d9246cd4be9d8b",
+    "startup-shutdown-red.jsonl": "13572ba9c07344db89ff206f6d0e5e6e4171dd35c5581c8864edb5f0ab8a015f",
+    "startup-shutdown-green.jsonl": "803c6eb23fbbb37adbbadd6b321e707528ef9f1fdcf242141e15dbf060224996",
+    "startup-fix-management.jsonl": "c388a1170e487806e1342a0071f6c85e9a377506ddc55e5b16a5c1d128b9977d",
+    "startup-fix-lint.log": "e92606b0bf483111dff0a120c315ea165821348f31365020e2468a0059095c47",
+    "final-master-tests.jsonl": "a8af460558654fb45c9e510a0fd954474dcac16220a223014d865f31ae0d5e6e",
+    "merged-http-cases.json": "127554b910e62e91c58bbd8497181650a50ff2f2f4ee02dff3185c042d100c33"
+  },
+  "复现命令": [
+    "env -u GOROOT GOTOOLCHAIN=go1.27.3 GOAGENT_PGSTORE_DSN=\"$GOAGENT_PGSTORE_DSN\" GOAGENT_PGSTORE_CONTAINER=\"$GOAGENT_PGSTORE_CONTAINER\" bash scripts/test-all.sh -json -timeout 240s",
+    "env -u GOROOT GOTOOLCHAIN=go1.27.3 bash scripts/lint-all.sh",
+    "cd management && env -u GOROOT GOTOOLCHAIN=go1.27.3 GOWORK=off go build ./...",
+    "python3 management/examples/host/test_cases.py --host-binary \"$GOAGENT_DEMO_BINARY\" --postgres-container \"$GOAGENT_PGSTORE_CONTAINER\" --output \"$GOAGENT_CASE_OUTPUT\""
+  ],
+  "复现前提": "使用本地Go1.27.3、golangci-lint2.15.0及专用Postgres17.6；DSN和容器名必须指向同一个专用容器。先在management中构建examples/host作为案例二进制。不要对业务数据库运行重启或同步提交故障测试。",
+  "后续边界": "正式发布仍须先发布当前pgstore、去除开发replace并验证外部消费者；本轮仅完成本地主线合并。"
+}

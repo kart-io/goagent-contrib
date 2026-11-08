@@ -1,0 +1,26 @@
+存档说明：仅展开制表符并去除行尾空白，以下测试正文与结果未改。
+
+=== RUN   TestReviewRecoveredDuration
+--- PASS: TestReviewRecoveredDuration (0.00s)
+=== RUN   TestReviewCancelWaitingRace
+--- PASS: TestReviewCancelWaitingRace (0.00s)
+=== RUN   TestReviewUnknownEvidence
+    regression_test.go:168: task={Operations:[] Meta:{ID:task TenantID:tenant Revision:2 CreatedAt:0001-01-01 00:00:00 +0000 UTC} SessionID:session AgentID: Version: RunID:task ExecutionKey:task Input:1 InputHash: State:attention WaitEpoch:0 Waits:[] CancelRequested:false RecoveryNeeded:false Result:null ResultRef: ErrorKind:unknown_evidence FinishedAt:<nil> Budget:{RootKey:task Version:v1 MaxModelRequests:10 MaxReservedTokens:0 MaxToolCalls:0 DeadlineUnixMilli:0 TokenPolicyVersion: MaxAgentCalls:0} Actor:{TenantID:tenant Subject:actor}}
+--- PASS: TestReviewUnknownEvidence (0.00s)
+PASS
+ok      github.com/kart-io/goagent-contrib/management   1.864s
+=== RUN   TestRestartAtEveryCommitBoundary
+=== RUN   TestRestartAtEveryCommitBoundary/effect_after_apply_cancel
+PASS
+--- PASS: TestRestartAtEveryCommitBoundary (4.44s)
+    --- PASS: TestRestartAtEveryCommitBoundary/effect_after_apply_cancel (4.43s)
+=== RUN   TestReviewCancelPreservesAttention
+--- PASS: TestReviewCancelPreservesAttention (0.21s)
+=== RUN   TestReviewValidateHonorsShutdownDeadline
+--- PASS: TestReviewValidateHonorsShutdownDeadline (0.20s)
+=== RUN   TestReviewUnknownUnattributedIsNotZero
+--- PASS: TestReviewUnknownUnattributedIsNotZero (0.28s)
+=== RUN   TestReviewMixedUnattributedKeepsPartialCounters
+--- PASS: TestReviewMixedUnattributedKeepsPartialCounters (0.23s)
+PASS
+ok      github.com/kart-io/goagent-contrib/management/integration   6.905s

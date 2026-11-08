@@ -6,15 +6,15 @@
 
 `management/pgstore.Migrate` 只初始化/校验独立管理表，`New` 只核对 schema 版本。会话表与 durable 表由既有 contrib pgstore schema 初始化。连接池直连可写主库；pgstore 租约、同步提交和旧主隔离要求仍然有效，管理模块不削弱这些约束。
 
-management 与可选 Harness 模块仅支持 GoAgent v0.50.0 当前接口，直接引用核心常量，不保留旧版适配与依赖回退。开发与验收使用仓库既有 workspace 装配同仓 pgstore；正式发布前先发布已迁移的 pgstore，再更新 management 的真实依赖版本并验证当前接口。Agent 配置版本与会话版本绑定属于业务能力，不受此依赖策略影响。
+management 与可选 Harness 模块仅支持 GoAgent v0.50.0 当前接口，直接引用核心常量，不保留旧版适配与依赖回退。完整仓库中的相对 replace 和既有 workspace 均选择同仓 pgstore；GOWORK=off 独立构建不再使用旧源码。正式发布前先发布已迁移的 pgstore，再移除开发替换、更新真实依赖版本并验证安装。Agent 配置版本与会话版本绑定属于业务能力，不受此依赖策略影响。
 
 ## 身份、权限与版本
 
 Authorizer 同时实现逐资源 `Authorize` 和可下推查询的 `Scope`。Visibility 的 All/ResourceIDs/AgentIDs/SessionIDs 与可信 TenantID 取交集；PolicyVersion 进入分页游标。读权限必须与 Scope 一致，不能先取一页再做任意过滤。`TenantAuthorizer` 只用于宿主已自行完成权限校验的场景和本地案例。
 
-所有请求主体由宿主生成，恢复前再次核对发起人的当前权限。Agent 停用阻止新会话、新任务和开始/恢复，已有运行不自动取消。配置版本不可覆盖，Session 绑定的实现、工具和策略必须仍可重建；发布新版本不能替换在途任务的实现。
+所有请求主体由宿主生成，恢复前再次核对发起人的当前权限。权限撤销、Agent 停用和实现缺失会把命令标为 blocked，并保存 permission_denied/agent_disabled/implementation_missing；原决定保留，条件恢复后可继续应用。Agent 停用阻止新会话、新任务和开始/恢复，已有运行不自动取消。配置版本不可覆盖，Session 绑定的实现、工具和策略必须仍可重建；发布新版本不能替换在途任务的实现。
 
-凭据在 Factory 中按 SecretRef 解析，不放进 Config、审批摘要、输入、审计或 effects payload。Runtime.Inspect 不请求模型、工具或 Reconcile；它只核对已保存的完成/等待证据。Native 已完成轮次的重建使用只读回放，缺失证据则报告 attention。
+凭据在 Factory 中按 SecretRef 解析，不放进 Config、审批摘要、输入、审计或 effects payload。Runtime.Inspect 不请求模型、工具或 Reconcile；它只核对已保存的完成/等待证据。Native 已完成轮次的重建使用只读回放；未完成轮次存在 pending 工具或被取消的工具效果记录时进入 attention，不把未知效果当作不存在再运行。
 
 ## 状态和一致性
 
@@ -52,8 +52,10 @@ attention 的恢复需要版本能力显式声明 Reconcile，可信 `Reconcilia
 
 ## 查询和保留
 
-历史在数据库按 seq 和 LIMIT 读取，默认隐藏 boundary/snapshot 与管理内部事件。HTTP 只移除管理结构中的内部键，不改写业务 input/result/config 的同名字段。运行用量读取持久预算的 self/inclusive/unknown 证据，不累计每次恢复返回的账本副本；CPU、内存和费用尚无来源时保持未知。
+历史在数据库按 seq 和 LIMIT 读取，默认隐藏 boundary/snapshot 与管理内部事件。HTTP 只移除管理结构中的内部键，不改写业务 input/result/config 的同名字段。运行用量在单个内存快照副本中复用核心预算校验，源日志保持只读；汇总跨页扫描所有授权任务，只累加 self，不累计恢复副本或嵌套 inclusive；CPU、内存和费用尚无来源时保持未知。
 
 默认幂等有效期 30 天，Task/结果保留 90 天，审计 180 天。宿主显式调用 `Service.Prune` 回收过期记录；有未确认命令、通知或未结束任务时延后清理。Session 日志、版本快照和外部业务表不由此方法自动删除，需按实际引用和业务保留策略处理。保留期到期后客户端幂等键可以重新接纳，不是永久去重承诺。
 
 首批没有吞吐、自动故障切换时间或线上模型质量承诺。上线前按实际会话长度、租户数、模型延迟和数据库池配置做容量验证。
+
+当前修复与逐需求验收见[审计修复报告](remediation-verification.md)。相对替换只解决同仓开发构建；Go 依赖模块的 replace 不会传递给下游消费者，正式发布仍按上述顺序进行，参见[Go 模块规范](https://go.dev/ref/mod#go-mod-file-replace)。

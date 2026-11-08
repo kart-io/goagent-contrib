@@ -71,3 +71,14 @@ bash scripts/with-local-modules.sh go -C management test -race -count=1 ./httpap
 多 API 共享接纳/查询、单执行宿主是当前边界。并行审批的原生传播有单独实验；尚未把跨机隔离、真实线上模型质量、长时间压力或真实数据库主备切换视为已通过。没有 DSN 的 SKIP 不等于数据库验收。
 
 需求追踪在原始实施计划中保留；实现将重复的命名测试合并为上述更完整的组合案例。验证报告记录实际执行的命令、测试数和独立审阅问题，不能把计划中的测试名称自动算成已运行。
+
+## 审计修复回归
+
+```bash
+bash scripts/with-local-modules.sh go -C management test -race -count=1 -timeout 240s -v \
+  -run 'Test(RestartAtEveryCommitBoundary|OutboxCrashAfterRemoteAcceptance|RevokedPermissionAndDisabledAgent|TenantIsolation|ResourceVisibility|Retention|UncooperativeRuntime|CancelDisableShutdown|AuditRunQuery|RunSummary|CompletedRunUsage)' ./integration
+```
+
+进程故障矩阵覆盖接纳、创建日志、审批答复固定前后、轮次结束、完成信封和 SQL 终态前后。另在工具外部效果已经写入但尚未保存结果时退出：恢复必须 attention，模型请求 1 次、效果 1 次；已确认完成的其他断点则成功且模型 2 次、效果 1 次。通知接收后确认丢失时重投相同 ID，业务 Attempt 不增加。
+
+这些用例只终止测试自身子进程；不引入自动 owner 抢占。完整需求映射与本次结果见[修复报告](remediation-verification.md)。

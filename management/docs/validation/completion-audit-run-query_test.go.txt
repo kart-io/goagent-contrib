@@ -1,0 +1,34 @@
+package integration_test
+
+import (
+    "context"
+    "encoding/json"
+    "testing"
+    "time"
+
+    "github.com/google/uuid"
+    mg "github.com/kart-io/goagent-contrib/management"
+    "github.com/stretchr/testify/require"
+)
+
+// TestAuditRunQueryIsReadOnly 核对查询未启动任务时不能改写会话日志。
+func TestAuditRunQueryIsReadOnly(t *testing.T) {
+    f := setup(t, nil)
+    w := f.worker(t)
+    se := f.session(t)
+    stop, cancel := context.WithTimeout(f.ctx, 5*time.Second)
+    defer cancel()
+    require.NoError(t, w.Shutdown(stop))
+    task, err := f.s.SubmitTask(f.ctx, f.actor, mg.SubmitTaskRequest{
+        IdempotencyKey: uuid.NewString(), SessionID: se.ID, Input: json.RawMessage(`"未启动"`),
+    })
+    require.NoError(t, err)
+    before, err := f.cfg.Sessions.Read(f.ctx, se.LogID, 0)
+    require.NoError(t, err)
+    run, err := f.s.GetRun(f.ctx, f.actor, task.ID)
+    require.NoError(t, err)
+    after, err := f.cfg.Sessions.Read(f.ctx, se.LogID, 0)
+    require.NoError(t, err)
+    t.Logf("任务状态=%s，查询前事件=%d，查询后事件=%d，complete=%t，usage存在=%t", run.Task.State, len(before), len(after), run.Complete, run.Usage != nil)
+    require.Equal(t, before, after, "运行查询不应创建或改写预算日志")
+}

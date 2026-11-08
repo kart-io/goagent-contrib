@@ -5,7 +5,9 @@
 - [HTTP 接口](httpapi/openapi.yaml)：OpenAPI 3.1，文件采用 JSON 形式的合法 YAML。
 - [运行与恢复说明](docs/operations.md)：部署边界、权限、停服、异常 owner 回收与数据保留。
 - [验证案例](docs/acceptance.md)：真实 Postgres、HTTP、审批、取消、Fork 和跨进程恢复的复跑方式。
-- [实施与验证报告](docs/VERIFICATION.md)：独立审阅修复、43 条测试、17 个关联模块与实际案例结果。
+- [审计修复与验收](docs/remediation-verification.md)：只读查询、观测汇总、权限阻塞、故障矩阵与当前构建方式。
+- [完成度复核归档](docs/completion-audit.md)：保留修复前发现、失败证据和需求缺口。
+- [首轮实施与验证报告](docs/VERIFICATION.md)：独立审阅修复、43 条测试、17 个关联模块与实际案例结果。
 - [需求](docs/planning/2026-11-08-unified-management-requirements.md)、[调研](docs/planning/2026-11-08-unified-management-feasibility.md)、[设计](docs/planning/2026-11-08-unified-management-design.md)、[计划归档](docs/planning/2026-11-08-unified-management.md)。
 - [案例源码](examples/host/main.go)：无需模型服务或 API 密钥的退款 Agent；业务退款记录仍真实写入 Postgres。
 
@@ -48,11 +50,17 @@ bash scripts/with-local-modules.sh go -C management run ./examples/host -listen 
 | Session | `/v1/sessions`、`/{id}`、`/{id}/history`、`/{id}/fork` |
 | Task | `/v1/tasks`、`/{id}`、`/{id}/cancel`、`/{id}/resume` |
 | Approval | `/v1/approvals`、`/{id}`、`/{id}/decision` |
-| Run/Command | `/v1/runs`、`/{id}`；`/v1/commands/{id}` |
+| Run/Command | `/v1/runs`、`/v1/runs/summary`、`/{id}`；`/v1/commands/{id}` |
 
 Task 的 `resume` 只能回应普通输入或可信核对后的 attention。审批必须通过 `decision` 提交，决定与续跑命令原子保存；Approval 查询中的 `command_state` 区分决定已记录与实际已应用。
 
 Session 创建/Fork 返回 202 preparing，ready 后才可提交 Task。Fork 限没有未结束任务的完整正常轮次边界，不迁移 Agent 版本。发布新版本只影响新会话默认版本；版本实现缺失时不能自动改用最新版本。
+
+## 运行观测
+
+`GetRun`/`ListRuns` 只读取已存在的用量快照，不创建账本或获取源日志租约。`usage_status` 为 available/partial/missing/unavailable；缺失或不可读时 usage 为 null、complete 为 false。queued_millis、execution_millis、waiting_millis、elapsed_millis 来自 Task 与 Attempt 的时间记录；崩溃遗留的未结束旧 Attempt 不计入已知执行区间，并以 duration_complete=false、unfinished_attempts 明确标记。TraceID 来自真实 OTel 上下文；宿主可在 Config.Tracer 注入 Tracer，未配置时不伪造 ID。
+
+`SummarizeRuns` 与 `GET /v1/runs/summary` 返回全部授权 Run 的总量和 Agent/Session 分组。limit 只控制扫描页大小，不截断总量；统计接口拒绝 cursor。总量和 Session 按根运行去重，Agent 分组与 agent_usage 只累加 self，嵌套 Agent 单独归属；未知消耗保留 null、unknown_runs 和完整性说明，未归属项另带 known/unknown/partial 计数及 unattributed_complete。created_to 固定创建时间范围，各页在查询时采样，不承诺跨页数据库快照。CPU、内存与费用没有数据源，保持未知。
 
 ## 验证
 
@@ -73,6 +81,6 @@ bash scripts/with-local-modules.sh go -C management/harness vet ./...
 
 仅支持 GoAgent v0.50.0 当前接口，直接使用 `constants` 中的 Session 事件与工作流端点常量，不保留旧版接口适配或依赖回退。Agent 配置版本、会话固定版本与 Fork 继承仍是管理服务的业务功能。
 
-当前 pgstore 的常量迁移尚未发布，开发、案例和验收统一使用上述同仓源码 workspace。`go.mod` 中 pgstore 仍记录真实存在的发布版本，不能据此使用旧 pgstore 单独构建管理模块；正式发布必须先发布迁移后的 pgstore，再更新 management 的版本锁定并发布。本模块尚未发布，不使用虚构版本或路径 replace。
+开发分支通过 `replace .../durable/pgstore => ../durable/pgstore` 显式绑定同仓当前实现；完整克隆 contrib 仓库后，management 目录中的 `GOWORK=off go build ./...`、测试与例子都可独立运行。该相对路径不依赖本机目录，也不回退旧源码。只复制 management 子目录不足以构建。正式发布时须先发布迁移后的 pgstore，再移除开发替换并更新真实版本锁定；本次没有推送、打发布 tag 或合并。
 
 需要联调本地核心源码时，可在命令前设置 `GOAGENT_CORE_ROOT=/path/to/goagent`；否则使用锁定的 GoAgent v0.50.0。两者使用同一套当前接口，不提供旧版依赖验收入口。本次清理与验证见[当前接口验证记录](docs/current-api-verification.md)。

@@ -1,0 +1,37 @@
+存档说明：仅展开制表符并去除行尾空白，以下测试正文与结果未改。
+
+=== RUN   TestReviewRecoveredDuration
+    observation_review_test.go:15: 仅新Attempt可确定执行2秒，不能把未结束旧Attempt重复累计：execution=12000 elapsed=10000
+--- FAIL: TestReviewRecoveredDuration (0.00s)
+FAIL
+FAIL    github.com/kart-io/goagent-contrib/management   0.665s
+=== RUN   TestReviewCancelPreservesAttention
+    review_test.go:55:
+            Error Trace:    /Users/costalong/code/go/src/github.com/kart/goagent-contrib-management/management/integration/review_test.go:55
+            Error:          Not equal:
+                            expected: "attention"
+                            actual  : "canceled"
+
+                            Diff:
+                            --- Expected
+                            +++ Actual
+                            @@ -1,2 +1,2 @@
+                            -(management.TaskState) (len=9) "attention"
+                            +(management.TaskState) (len=8) "canceled"
+
+            Test:           TestReviewCancelPreservesAttention
+            Messages:       unknown external effect must preserve responsibility
+--- FAIL: TestReviewCancelPreservesAttention (0.22s)
+=== RUN   TestReviewValidateHonorsShutdownDeadline
+    review_test.go:97: Shutdown remains blocked in BeginShutdown after its deadline
+--- FAIL: TestReviewValidateHonorsShutdownDeadline (0.38s)
+=== RUN   TestReviewUnknownUnattributedIsNotZero
+    review_test.go:130:
+            Error Trace:    /Users/costalong/code/go/src/github.com/kart/goagent-contrib-management/management/integration/review_test.go:130
+            Error:          Expected nil, but got: &interfaces.TokenUsage{PromptTokens:0, CompletionTokens:0, TotalTokens:0, CachedTokens:0, ReasoningTokens:0, ToolUsePromptTokens:0}
+            Test:           TestReviewUnknownUnattributedIsNotZero
+            Messages:       unreported unattributed tokens cannot be known zero
+--- FAIL: TestReviewUnknownUnattributedIsNotZero (0.25s)
+FAIL
+FAIL    github.com/kart-io/goagent-contrib/management/integration   1.832s
+FAIL

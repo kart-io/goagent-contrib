@@ -1,3 +1,5 @@
+> 完成度复核：既有用例通过不代表原计划全部验收完成；最新审计复现了运行查询写日志，并确认验收和发布缺口。整体状态以[完成度复核](../completion-audit.md)为准。
+
 > 后续更新：旧兼容基线决策已取消，见[当前接口验证记录](../current-api-verification.md)。下文为首轮执行的历史账本。
 
 # SDD ledger — plan: /Users/costalong/code/go/src/github.com/kart/goagent/docs/superpowers/plans/2026-11-08-unified-management.md

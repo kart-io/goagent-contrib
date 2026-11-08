@@ -8,6 +8,7 @@ require (
 	github.com/kart-io/goagent v0.50.0
 	github.com/kart-io/goagent-contrib/durable/pgstore v0.5.1-0.20261107151427-7637a02d2a30
 	github.com/stretchr/testify v1.12.1
+	go.opentelemetry.io/otel/trace v1.47.0
 )
 
 require (
@@ -22,7 +23,6 @@ require (
 	github.com/kart-io/logger v0.2.2 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	go.opentelemetry.io/otel v1.47.0 // indirect
-	go.opentelemetry.io/otel/trace v1.47.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.uber.org/multierr v1.10.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
@@ -37,3 +37,6 @@ require (
 	google.golang.org/grpc v1.85.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 )
+
+// 开发分支固定使用同仓当前源码；联合发布时替换为已发布的 pgstore 版本。
+replace github.com/kart-io/goagent-contrib/durable/pgstore => ../durable/pgstore

@@ -17,6 +17,8 @@ import (
 	"time"
 )
 
+var errAgentDisabled = errors.New("Agent已停用，命令等待重新启用")
+
 type Worker struct {
 	s       *Service
 	id      string
@@ -254,11 +256,26 @@ func (w *Worker) commandState(ctx context.Context, c Command, state string, caus
 		if e != nil {
 			return e
 		}
+		kind := ""
+		if cause != nil {
+			kind = "application_failed"
+			switch {
+			case errors.Is(cause, errAgentDisabled):
+				kind = "agent_disabled"
+			case errors.Is(cause, ErrForbidden) || errors.Is(cause, ErrUnauthenticated):
+				kind = "permission_denied"
+			case errors.Is(cause, ErrUnsupported):
+				kind = "implementation_missing"
+			}
+		}
+		if cur.State == state && cur.ErrorKind == kind {
+			return nil
+		}
 		old := cur.Revision
 		cur.State = state
+		cur.ErrorKind = kind
 		cur.Revision++
 		if cause != nil {
-			cur.ErrorKind = "application_failed"
 			if c.SessionID != "" && (c.Kind == "create_session" || c.Kind == "fork") {
 				se, err := read[Session](ctx, tx, "sessions", c.TenantID, c.SessionID)
 				if err != nil {
@@ -316,13 +333,17 @@ func (w *Worker) start(ctx context.Context, c Command) error {
 			return e
 		}
 		if !ag.Enabled {
-			return ErrBusy
+			return errAgentDisabled
 		}
 		v, e = read[Version](ctx, tx, "versions", c.TenantID, versionID(task.AgentID, task.Version))
 		if e != nil {
 			return e
 		}
-		if w.s.cfg.Factories[v.RunnerKind] == nil {
+		factory := w.s.cfg.Factories[v.RunnerKind]
+		if factory == nil {
+			return ErrUnsupported
+		}
+		if _, e = factory.Validate(ctx, v); e != nil {
 			return ErrUnsupported
 		}
 		if task.State != Queued && c.Kind != "resume" {
@@ -409,10 +430,17 @@ func (w *Worker) start(ctx context.Context, c Command) error {
 		}
 		old = cur.Revision
 		cur.State = "applying"
+		cur.ErrorKind = ""
 		cur.Revision++
 		return update(ctx, tx, "commands", cur, old)
 	})
 	if err != nil {
+		if errors.Is(err, errAgentDisabled) || errors.Is(err, ErrForbidden) || errors.Is(err, ErrUnauthenticated) || errors.Is(err, ErrUnsupported) {
+			if e := w.commandState(ctx, c, "blocked", err); e != nil {
+				return e
+			}
+			return ErrBusy
+		}
 		return err
 	}
 	if task.State != Running || attempt.ID == "" {
@@ -607,7 +635,9 @@ func (w *Worker) execute(ctx, parent context.Context, c Command, t Task, se Sess
 	if evidence.State != "absent" && evidence.State != "waiting" {
 		result = evidence.Result
 		result.Outcome = "attention"
-		result.ErrorKind = "unknown_evidence"
+		if result.ErrorKind == "" {
+			result.ErrorKind = "unknown_evidence"
+		}
 		return
 	}
 	result, runErr = binding.Runtime.Run(bound, spec)

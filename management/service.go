@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/google/uuid"
+	"github.com/kart-io/goagent/execution"
 	"io"
 	"strings"
 	"time"
@@ -24,7 +25,10 @@ func New(c Config) (*Service, error) {
 	if c.Limits == (Limits{}) {
 		c.Limits = defaults
 	}
-	if c.Limits.Workers < 1 || c.Limits.MaxPending < 1 || c.Limits.PageSize < 1 || c.Limits.MaxPageSize < c.Limits.PageSize || c.Limits.MaxPageSize > 200 || c.Limits.MaxInputBytes < 1 || c.Limits.MaxOutputBytes < 1 || c.Limits.IdempotencyRetention <= 0 {
+	if c.Limits.Workers < 1 || c.Limits.MaxPending < 1 || c.Limits.PageSize < 1 || c.Limits.MaxPageSize < c.Limits.PageSize || c.Limits.MaxPageSize > 200 || c.Limits.MaxInputBytes < 1 || c.Limits.MaxOutputBytes < 1 || c.Limits.IdempotencyRetention <= 0 || c.Limits.TaskRetention <= 0 || c.Limits.AuditRetention <= 0 {
+		return nil, ErrInvalid
+	}
+	if _, err := execution.NewScope(execution.Config{RunID: "management/config-validation", Tracer: c.Tracer}); err != nil {
 		return nil, ErrInvalid
 	}
 	if c.Now == nil {
@@ -102,20 +106,9 @@ func (s *Service) auth(ctx context.Context, a Actor, action, kind, id string) er
 		if err != nil {
 			return err
 		}
-		var rel struct {
-			AgentID   string `json:"agent_id"`
-			SessionID string `json:"session_id"`
-		}
-		if err = json.Unmarshal(d.Data, &rel); err != nil {
+		ref, err = resourceReference(kind, a.TenantID, id, d.Data)
+		if err != nil {
 			return err
-		}
-		ref.AgentID = rel.AgentID
-		ref.SessionID = rel.SessionID
-		if kind == "agents" {
-			ref.AgentID = id
-		}
-		if kind == "sessions" {
-			ref.SessionID = id
 		}
 	}
 	return s.cfg.Authorizer.Authorize(ctx, a, action, ref)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"github.com/kart-io/goagent/constants"
 	"github.com/kart-io/goagent/core/budget"
 	"github.com/kart-io/goagent/core/session"
@@ -19,15 +20,14 @@ func getAuthorized[T any](s *Service, ctx context.Context, a Actor, kind, action
 	if err != nil {
 		return v, err
 	}
-	var rel struct {
-		AgentID   string `json:"agent_id"`
-		SessionID string `json:"session_id"`
-	}
-	if err = json.Unmarshal(d.Data, &rel); err != nil {
+	ref, err := resourceReference(kind, a.TenantID, id, d.Data)
+	if err != nil {
 		return v, err
 	}
-	ref := ResourceRef{Type: kind, ID: id, TenantID: a.TenantID, AgentID: rel.AgentID, SessionID: rel.SessionID}
 	if err = s.cfg.Authorizer.Authorize(ctx, a, action, ref); err != nil {
+		if errors.Is(err, ErrForbidden) {
+			return v, ErrNotFound
+		}
 		return v, err
 	}
 	err = json.Unmarshal(d.Data, &v)
@@ -70,7 +70,10 @@ func (s *Service) GetCommand(ctx context.Context, a Actor, id string) (Command, 
 	} else {
 		_, err = s.GetSession(ctx, a, c.SessionID)
 	}
-	return c, err
+	if err != nil {
+		return Command{}, err
+	}
+	return c, nil
 }
 func listAuthorized[T any](s *Service, ctx context.Context, a Actor, kind, action string, q Query) (out Page[T], err error) {
 	out.Items = []T{}
@@ -123,14 +126,11 @@ func listAuthorized[T any](s *Service, ctx context.Context, a Actor, kind, actio
 		if err = json.Unmarshal(d.Data, &value); err != nil {
 			return out, err
 		}
-		var rel struct {
-			AgentID   string `json:"agent_id"`
-			SessionID string `json:"session_id"`
+		ref, e := resourceReference(kind, a.TenantID, d.ID, d.Data)
+		if e != nil {
+			return out, e
 		}
-		if err = json.Unmarshal(d.Data, &rel); err != nil {
-			return out, err
-		}
-		if err = s.cfg.Authorizer.Authorize(ctx, a, action, ResourceRef{Type: kind, ID: d.ID, TenantID: a.TenantID, AgentID: rel.AgentID, SessionID: rel.SessionID}); err != nil {
+		if err = s.cfg.Authorizer.Authorize(ctx, a, action, ref); err != nil {
 			return out, ErrForbidden
 		}
 		out.Items = append(out.Items, value)

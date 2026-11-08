@@ -40,6 +40,9 @@ func processFactory(pool *pgxpool.Pool, tenant string) mg.Factory {
 		reg := tools.NewRegistry()
 		e := reg.Register(tools.NewBaseTool("refund", "退款", `{"type":"object"}`, func(ctx context.Context, in *interfaces.ToolInput) (*interfaces.ToolOutput, error) {
 			_, e := pool.Exec(ctx, `INSERT INTO mg_case_counters VALUES($1,'effect',1) ON CONFLICT(tenant,kind) DO UPDATE SET n=mg_case_counters.n+1`, tenant)
+			if e == nil && os.Getenv("MG_FAULT_STAGE") == "effect_after_apply" {
+				os.Exit(42)
+			}
 			return &interfaces.ToolOutput{Success: e == nil, Result: "退款完成"}, e
 		}))
 		if e != nil {
@@ -63,6 +66,14 @@ func TestRecoveryChild(t *testing.T) {
 	}
 	f := setup(t, nil)
 	cfg := f.cfg
+	stage := os.Getenv("MG_FAULT_STAGE")
+	if stage != "" {
+		cfg.Sessions = crashBoundaryStore{Store: cfg.Sessions, stage: stage}
+		cfg.Store = crashManagementStore{Store: cfg.Store, stage: stage}
+	}
+	if stage == "outbox" || stage == "outbox_resume" {
+		cfg.Delivery = crashOutboxSink{f: f, crash: stage == "outbox"}
+	}
 	if os.Getenv("MG_CRASH_AFTER_FORK") == "1" {
 		cfg.Sessions = crashForkStore{cfg.Sessions}
 	}
@@ -71,6 +82,15 @@ func TestRecoveryChild(t *testing.T) {
 	require.NoError(t, e)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	if stage == "admission" {
+		_, err := s.SubmitTask(ctx, mg.Actor{TenantID: tenant, Subject: "验收操作人"}, mg.SubmitTaskRequest{IdempotencyKey: os.Getenv("MG_BOOTSTRAP_KEY"), SessionID: os.Getenv("MG_BOOTSTRAP_SESSION"), Input: json.RawMessage(`"断点退款"`)})
+		require.NoError(t, err)
+		os.Exit(42)
+	}
+	if stage == "outbox" || stage == "outbox_resume" {
+		require.NoError(t, mg.NewOutboxDispatcher(s).Run(ctx))
+		return
+	}
 	require.NoError(t, mg.NewWorker(s).Run(ctx))
 }
 

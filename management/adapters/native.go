@@ -14,6 +14,7 @@ import (
 	"github.com/kart-io/goagent/core/durable"
 	"github.com/kart-io/goagent/core/session"
 	"github.com/kart-io/goagent/tools"
+	"strings"
 )
 
 // NativeFactory 由宿主提供固定实现版本的 Builder；适配器强制绑定管理身份与日志。
@@ -101,6 +102,7 @@ func (n *native) Inspect(ctx context.Context, spec mg.RunSpec) (mg.RunEvidence, 
 	}
 	active := false
 	completed := false
+	tools := map[string]*durable.OperationRecord{}
 	for _, ev := range events {
 		switch ev.Type {
 		case constants.SessionEventTurnStart:
@@ -110,6 +112,30 @@ func (n *native) Inspect(ctx context.Context, spec mg.RunSpec) (mg.RunEvidence, 
 			}
 			active = turn.ExecutionKey == spec.Task.ExecutionKey
 			completed = false
+			if active {
+				tools = map[string]*durable.OperationRecord{}
+			}
+		case constants.SessionEventBoundarySnapshot:
+			if !active {
+				continue
+			}
+			var boundary session.BoundaryData
+			var snapshot durable.Snapshot
+			if json.Unmarshal(ev.Data, &boundary) != nil || json.Unmarshal(boundary.Snapshot, &snapshot) != nil {
+				return mg.RunEvidence{}, mg.ErrInvalid
+			}
+			var identity struct {
+				ID  string `json:"id"`
+				Key string `json:"key"`
+			}
+			if json.Unmarshal(snapshot.Data, &identity) != nil || !strings.HasPrefix(identity.ID, "tool/") {
+				continue
+			}
+			record, e := durable.DecodeOperationRecord(&snapshot, identity.Key, identity.ID)
+			if e != nil {
+				return mg.RunEvidence{}, e
+			}
+			tools[record.Key] = record
 		case constants.SessionEventTurnEnd:
 			var end session.TurnEnd
 			if json.Unmarshal(ev.Data, &end) != nil {
@@ -121,6 +147,13 @@ func (n *native) Inspect(ctx context.Context, spec mg.RunSpec) (mg.RunEvidence, 
 		}
 	}
 	if !completed {
+		// pending 工具可能已写入外部系统。不能依赖通用重试策略把它当作缺失操作重入；
+		// 内置原生适配器没有业务核对协议，此时保留责任并交给宿主处理。
+		for _, record := range tools {
+			if record.Status == "pending" || (record.Status == "failed" && record.FailureKind == "canceled") {
+				return mg.RunEvidence{State: "attention", Result: mg.RunResult{Outcome: "attention", ErrorKind: "unconfirmed_tool"}}, nil
+			}
+		}
 		return mg.RunEvidence{State: "absent"}, nil
 	}
 	// 计量配置属于模型操作意图。保持同一配置，但把回放中的计量补记限制在内存副本。

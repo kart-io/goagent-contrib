@@ -12,7 +12,7 @@
 - [核心管理说明](https://github.com/kart-io/goagent/blob/master/management/README.md)
 - [核心迁移指南](https://github.com/kart-io/goagent/blob/master/docs/guides/MANAGEMENT_MIGRATION.md)
 - [当前 OpenAPI](https://github.com/kart-io/goagent/blob/master/management/httpapi/openapi.yaml)
-- [运行与恢复](docs/operations.md)、[验收案例](docs/acceptance.md)
+- [迁移验收结果](docs/core-migration.md)、[运行与恢复](docs/operations.md)、[验收案例](docs/acceptance.md)
 - docs 中原规划、案例日志和合并记录保留为迁移前的历史证据，不代表当前包归属。
 
 ## 联合开发与验证

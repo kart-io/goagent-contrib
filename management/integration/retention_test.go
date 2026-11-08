@@ -2,14 +2,15 @@ package integration_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	"github.com/kart-io/goagent/codec/json"
+	agentErrors "github.com/kart-io/goagent/errors"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	mg "github.com/kart-io/goagent-contrib/management"
+	mg "github.com/kart-io/goagent/management"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -75,7 +76,7 @@ func TestRetentionKeepsLiveKeysAndUnconfirmedDependencies(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, counts["tasks"])
 	_, err = service.GetTask(f.ctx, f.actor, task.ID)
-	require.ErrorIs(t, err, mg.ErrNotFound)
+	require.ErrorIs(t, err, agentErrors.ErrManagementNotFound)
 	same, err := service.SubmitTask(f.ctx, f.actor, request)
 	require.NoError(t, err)
 	require.Equal(t, task.ID, same.ID, "清理结果后仍有效的幂等键必须复用原响应")
@@ -112,7 +113,7 @@ func TestInvalidRetentionAndTypedNilTracerAreRejected(t *testing.T) {
 				cfg.Tracer = tracer
 			}
 			_, err := mg.New(cfg)
-			require.ErrorIs(t, err, mg.ErrInvalid)
+			require.ErrorIs(t, err, agentErrors.ErrManagementInvalid)
 		})
 	}
 }

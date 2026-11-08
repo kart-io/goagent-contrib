@@ -51,6 +51,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 管理入口已迁入核心；与 management/go.mod 锁定同一份源码。
+      - name: Checkout management core
+        uses: actions/checkout@v4
+        with:
+          repository: kart-io/goagent
+          ref: db7fffed9a84cce510576ac6e3263d043a4f411e
+          path: .goagent-core
+
       - uses: actions/setup-go@v5
         with:
           go-version: '1.27.3'
@@ -65,7 +73,8 @@ jobs:
           export GOWORK="$workspace_dir/go.work"
           while IFS= read -r mod; do
             go work use "$(dirname "$mod")"
-          done < <(find "$GITHUB_WORKSPACE" -name go.mod -not -path '*/.git/*' | sort)
+          done < <(find "$GITHUB_WORKSPACE" -name go.mod -not -path '*/.git/*' -not -path "$GITHUB_WORKSPACE/.goagent-core/*" | sort)
+          go work use "$GITHUB_WORKSPACE/.goagent-core"
           go work edit -go=1.27.0 -toolchain=go1.27.3
           echo "GOWORK=$GOWORK" >> "$GITHUB_ENV"
 

@@ -3,14 +3,15 @@ package pgstore
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	mg "github.com/kart-io/goagent-contrib/management"
+	"github.com/kart-io/goagent/codec/json"
 	"github.com/kart-io/goagent/constants"
+	agentErrors "github.com/kart-io/goagent/errors"
+	mg "github.com/kart-io/goagent/management"
 	"strings"
 	"time"
 )
@@ -29,7 +30,7 @@ func table(kind string) (string, error) {
 			return "mg_" + k, nil
 		}
 	}
-	return "", mg.ErrInvalid
+	return "", agentErrors.ErrManagementInvalid
 }
 
 // Migrate 必须由宿主显式调用；版本检查在 New 中完成。
@@ -92,14 +93,14 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 }
 func New(ctx context.Context, pool *pgxpool.Pool) (*Store, error) {
 	if pool == nil {
-		return nil, mg.ErrInvalid
+		return nil, agentErrors.ErrManagementInvalid
 	}
 	var v int
 	if err := pool.QueryRow(ctx, `SELECT version FROM mg_schema`).Scan(&v); err != nil {
 		return nil, err
 	}
 	if v != 1 {
-		return nil, mg.ErrUnsupported
+		return nil, agentErrors.ErrManagementUnsupported
 	}
 	return &Store{pool}, nil
 }
@@ -126,7 +127,7 @@ func (t transaction) Get(ctx context.Context, kind, tenant, id string) (d mg.Doc
 	d.Kind = kind
 	err = t.db.QueryRow(ctx, `SELECT tenant_id,id,revision,created_at,data FROM `+tbl+` WHERE tenant_id=$1 AND id=$2`, tenant, id).Scan(&d.TenantID, &d.ID, &d.Revision, &d.CreatedAt, &d.Data)
 	if errors.Is(err, pgx.ErrNoRows) {
-		err = mg.ErrNotFound
+		err = agentErrors.ErrManagementNotFound
 	}
 	return
 }
@@ -138,7 +139,7 @@ func (t transaction) Insert(ctx context.Context, d mg.Document) error {
 	_, err = t.db.Exec(ctx, `INSERT INTO `+tbl+`(tenant_id,id,revision,created_at,data)VALUES($1,$2,$3,$4,$5)`, d.TenantID, d.ID, d.Revision, d.CreatedAt, d.Data)
 	var pe *pgconn.PgError
 	if errors.As(err, &pe) && (pe.Code == "23505" || pe.Code == "23503") {
-		return mg.ErrConflict
+		return agentErrors.ErrManagementConflict
 	}
 	return err
 }
@@ -149,7 +150,7 @@ func (t transaction) CAS(ctx context.Context, d mg.Document, expected int64) err
 	}
 	tag, err := t.db.Exec(ctx, `UPDATE `+tbl+` SET revision=$1,data=$2 WHERE tenant_id=$3 AND id=$4 AND revision=$5`, d.Revision, d.Data, d.TenantID, d.ID, expected)
 	if err == nil && tag.RowsAffected() != 1 {
-		return mg.ErrConflict
+		return agentErrors.ErrManagementConflict
 	}
 	return err
 }
@@ -160,7 +161,7 @@ func (t transaction) Delete(ctx context.Context, kind, tenant, id string, rev in
 	}
 	tag, err := t.db.Exec(ctx, `DELETE FROM `+tbl+` WHERE tenant_id=$1 AND id=$2 AND revision=$3`, tenant, id, rev)
 	if err == nil && tag.RowsAffected() != 1 {
-		return mg.ErrConflict
+		return agentErrors.ErrManagementConflict
 	}
 	return err
 }
@@ -175,7 +176,7 @@ func (t transaction) List(ctx context.Context, kind string, sel mg.Selection) ([
 	if sel.TenantID != "" {
 		where = append(where, "tenant_id="+add(sel.TenantID))
 	} else if !sel.Visibility.All {
-		return nil, mg.ErrForbidden
+		return nil, agentErrors.ErrManagementForbidden
 	}
 	q := sel.Query
 	for _, f := range []struct{ field, value string }{{"agent_id", q.AgentID}, {"session_id", q.SessionID}, {"task_id", q.TaskID}} {
@@ -195,11 +196,11 @@ func (t transaction) List(ctx context.Context, kind string, sel mg.Selection) ([
 	if q.Cursor != "" {
 		parts := strings.SplitN(q.Cursor, "|", 2)
 		if len(parts) != 2 {
-			return nil, mg.ErrInvalid
+			return nil, agentErrors.ErrManagementInvalid
 		}
 		at, e := time.Parse(time.RFC3339Nano, parts[0])
 		if e != nil {
-			return nil, mg.ErrInvalid
+			return nil, agentErrors.ErrManagementInvalid
 		}
 		where = append(where, "(created_at,id)>("+add(at)+","+add(parts[1])+")")
 	}
@@ -230,7 +231,7 @@ func (t transaction) List(ctx context.Context, kind string, sel mg.Selection) ([
 		limit = 201
 	}
 	if limit > 10001 {
-		return nil, mg.ErrInvalid
+		return nil, agentErrors.ErrManagementInvalid
 	}
 	rows, err := t.db.Query(ctx, `SELECT tenant_id,id,revision,created_at,data FROM `+tbl+` WHERE `+strings.Join(where, " AND ")+` ORDER BY created_at,id LIMIT `+add(limit), args...)
 	if err != nil {
@@ -252,7 +253,7 @@ func (t transaction) List(ctx context.Context, kind string, sel mg.Selection) ([
 func (s *Store) History(ctx context.Context, id string, after int64, limit int, types []string) (mg.HistoryPage, error) {
 	out := mg.HistoryPage{NextSeq: after}
 	if limit < 1 || limit > 200 {
-		return out, mg.ErrInvalid
+		return out, agentErrors.ErrManagementInvalid
 	}
 	rows, err := s.pool.Query(ctx, `SELECT seq,event FROM goagent_session_event WHERE session_id=$1 AND seq>$2 AND type<>$5 AND type NOT LIKE 'management/%' AND (COALESCE(cardinality($4::text[]),0)=0 OR type=ANY($4::text[])) ORDER BY seq LIMIT $3`, id, after, limit, types, constants.SessionEventBoundarySnapshot)
 	if err != nil {

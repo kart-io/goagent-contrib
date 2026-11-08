@@ -1,87 +1,34 @@
-# GoAgent 统一管理服务
+# GoAgent 管理扩展与验收宿主
 
-可嵌入 Go 宿主的 Agent、Session、Task、Approval 和运行查询服务。管理 API 持久接纳请求，由一个活动 worker 执行；模型、工具、日志、预算与恢复复用 GoAgent。可选 [Harness 适配](harness) 不进入主模块依赖。
+通用管理服务已迁入 `github.com/kart-io/goagent/management`，原生/Graph 适配和 HTTP Handler 也使用核心新入口。这里不再提供旧根包或兼容转发。
 
-- [HTTP 接口](httpapi/openapi.yaml)：OpenAPI 3.1，文件采用 JSON 形式的合法 YAML。
-- [运行与恢复说明](docs/operations.md)：部署边界、权限、停服、异常 owner 回收与数据保留。
-- [本轮案例实测](docs/case-test-results.md)：8 组真实 HTTP 场景、SQL 核对和 27 个恢复/并发测试事件。
-- [验证案例](docs/acceptance.md)：真实 Postgres、HTTP、审批、取消、Fork 和跨进程恢复的复跑方式。
-- [审计修复与验收](docs/remediation-verification.md)：只读查询、观测汇总、权限阻塞、故障矩阵与当前构建方式。
-- [完成度复核归档](docs/completion-audit.md)：保留修复前发现、失败证据和需求缺口。
-- [首轮实施与验证报告](docs/VERIFICATION.md)：独立审阅修复、43 条测试、17 个关联模块与实际案例结果。
-- [需求](docs/planning/2026-11-08-unified-management-requirements.md)、[调研](docs/planning/2026-11-08-unified-management-feasibility.md)、[设计](docs/planning/2026-11-08-unified-management-design.md)、[计划归档](docs/planning/2026-11-08-unified-management.md)。
-- [案例源码](examples/host/main.go)：无需模型服务或 API 密钥的退款 Agent；业务退款记录仍真实写入 Postgres。
+| 保留目录 | 职责 |
+| --- | --- |
+| `pgstore` | management.Store 与 HistoryReader 的 PostgreSQL 实现 |
+| `integration` | 真实数据库、HTTP、审批、进程恢复与并发集成测试 |
+| `examples/host` | 离线退款 Agent 的可运行宿主及 8 组 HTTP 黑盒案例 |
+| `harness` | 可选独立模块，对接 background 和 effects |
 
-## 运行退款案例
+- [核心管理说明](https://github.com/kart-io/goagent/blob/master/management/README.md)
+- [核心迁移指南](https://github.com/kart-io/goagent/blob/master/docs/guides/MANAGEMENT_MIGRATION.md)
+- [当前 OpenAPI](https://github.com/kart-io/goagent/blob/master/management/httpapi/openapi.yaml)
+- [运行与恢复](docs/operations.md)、[验收案例](docs/acceptance.md)
+- docs 中原规划、案例日志和合并记录保留为迁移前的历史证据，不代表当前包归属。
 
-以下命令均在 contrib 仓库根目录运行，使用现有脚本装配同仓当前模块。准备专用本地数据库，以下密码只用于本地案例容器。
+## 联合开发与验证
+
+必须使用包含新 management 包的 GoAgent 源码；v0.50.0 没有该包。本模块已锁定实际迁移提交 `db7fffed9a84` 对应的 Go 伪版本；它目前仅存在本地，须先将该提交推送到核心远端，外部消费者才能下载。远端 CI 同样锁定该核心提交。当前跨仓验证显式使用临时 workspace，不在核心提交本机路径或旧接口回退。
 
 ```bash
-docker run -d --name goagent-management-demo \
-  -e POSTGRES_PASSWORD=management-local \
-  -p 127.0.0.1:55439:5432 postgres:17.6-alpine
-
-export GOAGENT_PGSTORE_DSN='postgres://postgres:management-local@127.0.0.1:55439/postgres?sslmode=disable'
+# 在 contrib 根目录运行；先准备专用 Postgres 17.6 并等待就绪。
+export GOAGENT_CORE_ROOT=/path/to/goagent
+export GOAGENT_PGSTORE_DSN='postgres://postgres:management-local@127.0.0.1:55441/postgres?sslmode=disable'
+bash scripts/with-local-modules.sh go -C management test -race -count=1 -timeout 240s ./...
 bash scripts/with-local-modules.sh go -C management run ./examples/host -migrate -verify -listen 127.0.0.1:0
 ```
 
-等待 `docker exec goagent-management-demo pg_isready -U postgres` 成功后运行 Go 命令。`-migrate` 明确授权案例初始化管理表、GoAgent 日志表和案例业务表；普通服务构造器不会隐式改表。
+`-migrate` 显式初始化管理表、执行日志表和案例退款表；构造器不隐式建表。案例断言批准退款只执行一次、重复提交复用 Task、Token 为 10、旧 Session/Fork 绑定 v1、新 Session 绑定 v2。8 组黑盒案例由 examples/host/test_cases.py 驱动真实 TCP HTTP 并查询数据库核对。
 
-案例使用真实 HTTP 依次执行：注册 → 保存 v1/v2 → 发布 v1 → 创建会话 → 幂等提交任务 → 查询待审 → 批准退款 → 查询结果/用量 → 发布 v2 → 检查旧/新会话版本 → Fork。退出前断言：退款 1 次、重复提交同一 Task、Token 总量 10、旧会话/分支 v1、新会话 v2。
+宿主认证通过 Authorization Bearer local-demo；生产接入必须替换可信身份和 Authorizer。所有创建/命令使用 Idempotency-Key，修订更新使用 expected_revision。领域错误改为核心 `errors.ErrManagement*`；JSON 类型与编解码采用核心 `codec/json`。
 
-保留服务供手动操作：
-
-```bash
-bash scripts/with-local-modules.sh go -C management run ./examples/host -listen 127.0.0.1:8097
-```
-
-案例通过 `Authorization: Bearer local-demo` 生成固定可信操作者；可用 `GOAGENT_DEMO_TOKEN` 修改。生产宿主必须替换身份认证和 Authorizer，不能把客户端 TenantID、ActorID 或内部恢复键当作可信输入。
-
-## 嵌入与接口
-
-宿主准备 `management.Config`：管理 Store、`session.Store`、有界 HistoryReader、Authorizer 与 `map[string]Factory`。调用 `management.New` 后，用 `NewWorker(service).Run(ctx)` 启动执行者；使用 `httpapi.New` 挂载标准 `http.Handler`。后者不监听端口、不为受管 Task 再启动一个请求级执行。
-
-原生 Builder 使用 `adapters.NativeFactory`，宿主提供纯配置 `Check` 和固定版本 `BuildAgent`。适配器绑定 Session、Agent 与 durable scope，并通过宿主 Approver 处理持久单次审批。图使用 `adapters.GraphFactory[T]`，宿主必须提供与版本匹配的 ResumeHandler 和批准/拒绝分支。
-
-每次创建和命令 POST 都带 `Idempotency-Key`。相同键/相同内容复用原响应；不同内容返回 409。输入数值保留精度，重复 JSON 键和未知字段拒绝。修订更新必须提交 `expected_revision`。
-
-| 资源 | 路由 |
-| --- | --- |
-| Agent | `/v1/agents`、`/{id}`、`/{id}/versions`、`/{id}/publish`、`/{id}/enable`、`/{id}/disable` |
-| Session | `/v1/sessions`、`/{id}`、`/{id}/history`、`/{id}/fork` |
-| Task | `/v1/tasks`、`/{id}`、`/{id}/cancel`、`/{id}/resume` |
-| Approval | `/v1/approvals`、`/{id}`、`/{id}/decision` |
-| Run/Command | `/v1/runs`、`/v1/runs/summary`、`/{id}`；`/v1/commands/{id}` |
-
-Task 的 `resume` 只能回应普通输入或可信核对后的 attention。审批必须通过 `decision` 提交，决定与续跑命令原子保存；Approval 查询中的 `command_state` 区分决定已记录与实际已应用。
-
-Session 创建/Fork 返回 202 preparing，ready 后才可提交 Task。Fork 限没有未结束任务的完整正常轮次边界，不迁移 Agent 版本。发布新版本只影响新会话默认版本；版本实现缺失时不能自动改用最新版本。
-
-## 运行观测
-
-`GetRun`/`ListRuns` 只读取已存在的用量快照，不创建账本或获取源日志租约。`usage_status` 为 available/partial/missing/unavailable；缺失或不可读时 usage 为 null、complete 为 false。queued_millis、execution_millis、waiting_millis、elapsed_millis 来自 Task 与 Attempt 的时间记录；崩溃遗留的未结束旧 Attempt 不计入已知执行区间，并以 duration_complete=false、unfinished_attempts 明确标记。TraceID 来自真实 OTel 上下文；宿主可在 Config.Tracer 注入 Tracer，未配置时不伪造 ID。
-
-`SummarizeRuns` 与 `GET /v1/runs/summary` 返回全部授权 Run 的总量和 Agent/Session 分组。limit 只控制扫描页大小，不截断总量；统计接口拒绝 cursor。总量和 Session 按根运行去重，Agent 分组与 agent_usage 只累加 self，嵌套 Agent 单独归属；未知消耗保留 null、unknown_runs 和完整性说明，未归属项另带 known/unknown/partial 计数及 unattributed_complete。created_to 固定创建时间范围，各页在查询时采样，不承诺跨页数据库快照。CPU、内存与费用没有数据源，保持未知。
-
-## 验证
-
-```bash
-export GOAGENT_PGSTORE_DSN='postgres://postgres:management-local@127.0.0.1:55439/postgres?sslmode=disable'
-bash scripts/with-local-modules.sh go -C management test -race -count=1 -timeout 180s ./...
-bash scripts/with-local-modules.sh go -C management vet ./...
-```
-
-未设置 DSN 时数据库测试会 SKIP，不构成持久恢复验收。测试为组合案例创建独立 schema 并清理；进程恢复测试会启动并终止自身的测试子进程，不操作宿主已有 worker。`management/harness` 是独立模块，另行验证：
-
-```bash
-bash scripts/with-local-modules.sh go -C management/harness test -race -count=1 ./...
-bash scripts/with-local-modules.sh go -C management/harness vet ./...
-```
-
-## 依赖与发布
-
-仅支持 GoAgent v0.50.0 当前接口，直接使用 `constants` 中的 Session 事件与工作流端点常量，不保留旧版接口适配或依赖回退。Agent 配置版本、会话固定版本与 Fork 继承仍是管理服务的业务功能。
-
-开发分支通过 `replace .../durable/pgstore => ../durable/pgstore` 显式绑定同仓当前实现；完整克隆 contrib 仓库后，management 目录中的 `GOWORK=off go build ./...`、测试与例子都可独立运行。该相对路径不依赖本机目录，也不回退旧源码。只复制 management 子目录不足以构建。正式发布时须先发布迁移后的 pgstore，再移除开发替换并更新真实版本锁定；本次没有推送、打发布 tag 或合并。
-
-需要联调本地核心源码时，可在命令前设置 `GOAGENT_CORE_ROOT=/path/to/goagent`；否则使用锁定的 GoAgent v0.50.0。两者使用同一套当前接口，不提供旧版依赖验收入口。本次清理与验证见[当前接口验证记录](docs/current-api-verification.md)。
+未设置 DSN 的测试跳过不构成持久验收；数据库重启和同步提交故障测试只允许在指定专用容器执行。原 pgstore 相对开发绑定仍保留在扩展模块，不进入核心依赖图。

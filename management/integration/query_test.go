@@ -2,8 +2,8 @@ package integration_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	"github.com/kart-io/goagent/codec/json"
 	"github.com/kart-io/goagent/constants"
 	"github.com/kart-io/goagent/core/session"
 	"strings"
@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	mg "github.com/kart-io/goagent-contrib/management"
+	mg "github.com/kart-io/goagent/management"
 	"github.com/stretchr/testify/require"
 )
 

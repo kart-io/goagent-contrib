@@ -2,10 +2,10 @@ package integration_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"github.com/google/uuid"
-	mg "github.com/kart-io/goagent-contrib/management"
+	"github.com/kart-io/goagent/codec/json"
+	mg "github.com/kart-io/goagent/management"
 	"github.com/stretchr/testify/require"
 	"sync"
 	"testing"

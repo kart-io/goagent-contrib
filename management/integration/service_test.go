@@ -2,13 +2,14 @@ package integration_test
 
 import (
 	"context"
-	"encoding/json"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	journal "github.com/kart-io/goagent-contrib/durable/pgstore"
-	mg "github.com/kart-io/goagent-contrib/management"
 	db "github.com/kart-io/goagent-contrib/management/pgstore"
+	"github.com/kart-io/goagent/codec/json"
+	agentErrors "github.com/kart-io/goagent/errors"
+	mg "github.com/kart-io/goagent/management"
 	"github.com/stretchr/testify/require"
 	"os"
 	"strings"
@@ -115,7 +116,7 @@ func TestVersionCannotBeOverwritten(t *testing.T) {
 	f := setup(t, nil)
 	a, _ := f.agent(t)
 	_, err := f.s.SaveVersion(f.ctx, f.actor, mg.SaveVersionRequest{IdempotencyKey: uuid.NewString(), AgentID: a.ID, Version: "v1", RunnerKind: "test", ImplementationVersion: "code-v2", Config: json.RawMessage(`{}`)})
-	require.ErrorIs(t, err, mg.ErrConflict)
+	require.ErrorIs(t, err, agentErrors.ErrManagementConflict)
 }
 func TestSessionKeepsPublishedVersion(t *testing.T) {
 	f := setup(t, nil)

@@ -1,5 +1,7 @@
 # 统一管理服务验证案例
 
+当前管理服务、adapters、httpapi 已迁入 GoAgent；使用核心 `management` 和 `errors.ErrManagement*` 入口。跨仓验证须按 [扩展说明](../README.md) 显式指定包含新包的 GOAGENT_CORE_ROOT。
+
 以下命令均从 contrib 仓库根目录运行，使用当前同仓源码 workspace。使用专用本地 Postgres 17，设置 `GOAGENT_PGSTORE_DSN`。完整案例命令见[模块 README](../README.md)。测试不依赖模型网络或密钥；Agent 循环、工具、审批、日志、预算、HTTP 与数据库都使用真实组件。
 
 ## 案例一：可运行退款客服

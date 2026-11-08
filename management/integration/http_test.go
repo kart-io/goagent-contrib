@@ -3,10 +3,10 @@ package integration_test
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"github.com/google/uuid"
-	mg "github.com/kart-io/goagent-contrib/management"
-	"github.com/kart-io/goagent-contrib/management/httpapi"
+	"github.com/kart-io/goagent/codec/json"
+	mg "github.com/kart-io/goagent/management"
+	"github.com/kart-io/goagent/management/httpapi"
 	"github.com/stretchr/testify/require"
 	"io"
 	"net/http"

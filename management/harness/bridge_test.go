@@ -2,9 +2,9 @@ package harness
 
 import (
 	"context"
-	"encoding/json"
 	"github.com/kart-io/goagent-harness/background"
 	"github.com/kart-io/goagent-harness/effects"
+	"github.com/kart-io/goagent/codec/json"
 	"github.com/kart-io/goagent/core/durable"
 	"github.com/stretchr/testify/require"
 	"sync/atomic"

@@ -4,7 +4,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -12,14 +11,16 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	journal "github.com/kart-io/goagent-contrib/durable/pgstore"
-	mg "github.com/kart-io/goagent-contrib/management"
-	"github.com/kart-io/goagent-contrib/management/adapters"
-	"github.com/kart-io/goagent-contrib/management/httpapi"
 	db "github.com/kart-io/goagent-contrib/management/pgstore"
 	"github.com/kart-io/goagent/builder"
+	"github.com/kart-io/goagent/codec/json"
 	"github.com/kart-io/goagent/constants"
+	agentErrors "github.com/kart-io/goagent/errors"
 	"github.com/kart-io/goagent/interfaces"
 	"github.com/kart-io/goagent/llm"
+	mg "github.com/kart-io/goagent/management"
+	"github.com/kart-io/goagent/management/adapters"
+	"github.com/kart-io/goagent/management/httpapi"
 	"github.com/kart-io/goagent/tools"
 	"io"
 	"net"
@@ -68,7 +69,7 @@ func (m *model) CompleteToolsStream(_ context.Context, r *llm.CompletionRequest,
 func factory(pool *pgxpool.Pool) mg.Factory {
 	return adapters.NativeFactory{Check: func(_ context.Context, v mg.Version) error {
 		if v.ImplementationVersion != "demo-v1" && v.ImplementationVersion != "demo-v2" {
-			return mg.ErrUnsupported
+			return agentErrors.ErrManagementUnsupported
 		}
 		return nil
 	}, BuildAgent: func(ctx context.Context, v mg.Version, r mg.Resources, ap tools.Approver) (*builder.SimpleAgentBuilder, func(context.Context) error, error) {
@@ -163,7 +164,7 @@ func run() (runErr error) {
 	}
 	handler, err := httpapi.New(service, httpapi.Config{ActorFromRequest: func(r *http.Request) (mg.Actor, error) {
 		if r.Header.Get("Authorization") != "Bearer "+token {
-			return mg.Actor{}, mg.ErrUnauthenticated
+			return mg.Actor{}, agentErrors.ErrManagementUnauthenticated
 		}
 		return actor, nil
 	}})
@@ -235,7 +236,7 @@ func (c client) call(ctx context.Context, method, path string, value any, key st
 		raw, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
 		return fmt.Errorf("HTTP %d：%s", res.StatusCode, raw)
 	}
-	return json.NewDecoder(res.Body).Decode(out)
+	return json.Decode(res.Body, out)
 }
 func (c client) wait(ctx context.Context, path string, done func(json.RawMessage) bool) error {
 	for {
@@ -340,7 +341,7 @@ func verifyCase(parent context.Context, url, token string, pool *pgxpool.Pool, a
 		return errors.New("效果次数或用量去重验证失败")
 	}
 	summary := map[string]any{"验证": "通过", "Agent": agent.ID, "Task": task.ID, "结果": task.Result, "退款次数": count, "Token": run.Usage.Root.KnownTokens.TotalTokens, "旧会话版本": se.Version, "新会话版本": fresh.Version, "分支版本": branch.Version, "重复提交复用任务": duplicate.ID == task.ID}
-	raw, _ := json.MarshalIndent(summary, "", "  ")
+	raw, _ := json.Marshal(summary, json.Pretty)
 	fmt.Println(string(raw))
 	return nil
 }

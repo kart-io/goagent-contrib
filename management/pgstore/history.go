@@ -1,7 +1,7 @@
 package pgstore
 
 import (
-	"encoding/json"
+	"github.com/kart-io/goagent/codec/json"
 	"github.com/kart-io/goagent/core/session"
 	"time"
 )

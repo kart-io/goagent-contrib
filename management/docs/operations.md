@@ -1,5 +1,7 @@
 # 统一管理服务运行与恢复
 
+当前管理服务、adapters、httpapi 已迁入 GoAgent；使用核心 `management` 和 `errors.ErrManagement*` 入口。跨仓验证须按 [扩展说明](../README.md) 显式指定包含新包的 GOAGENT_CORE_ROOT。
+
 ## 部署和依赖
 
 首批支持多个 API 共用管理数据库、一个活动执行 worker；没有心跳超时自动抢占、多 worker 分片或管理前端。管理写事务使用短 advisory 事务锁统一处理跨实体约束；Agent 执行和模型/工具 I/O 均在事务之外。宿主 `Factory.Validate/Check` 必须是纯配置与能力校验，不在管理事务中访问网络或重入 Service。

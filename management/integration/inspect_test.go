@@ -2,11 +2,12 @@ package integration_test
 
 import (
 	"context"
-	"encoding/json"
 	"github.com/google/uuid"
-	mg "github.com/kart-io/goagent-contrib/management"
+	"github.com/kart-io/goagent/codec/json"
 	"github.com/kart-io/goagent/core/session"
+	agentErrors "github.com/kart-io/goagent/errors"
 	"github.com/kart-io/goagent/execution"
+	mg "github.com/kart-io/goagent/management"
 	"github.com/stretchr/testify/require"
 	"sync/atomic"
 	"testing"
@@ -47,7 +48,9 @@ func TestNativeInspectCompletedDoesNotRepeatModel(t *testing.T) {
 	ctx, cancel, e := scope.Bind(context.Background())
 	require.NoError(t, e)
 	defer cancel()
-	binding, e := factory.Build(ctx, version, mg.Resources{Task: task, Session: se, Scope: scope, Journal: j, Sessions: f.cfg.Sessions, ApprovalReader: func(context.Context, string) (mg.Approval, error) { return mg.Approval{}, mg.ErrForbidden }})
+	binding, e := factory.Build(ctx, version, mg.Resources{Task: task, Session: se, Scope: scope, Journal: j, Sessions: f.cfg.Sessions, ApprovalReader: func(context.Context, string) (mg.Approval, error) {
+		return mg.Approval{}, agentErrors.ErrManagementForbidden
+	}})
 	require.NoError(t, e)
 	beforeEvents, e := f.cfg.Sessions.Read(ctx, se.LogID, 0)
 	require.NoError(t, e)

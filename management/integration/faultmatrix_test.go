@@ -2,8 +2,9 @@ package integration_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	"github.com/kart-io/goagent/codec/json"
+	agentErrors "github.com/kart-io/goagent/errors"
 	"os"
 	"os/exec"
 	"strings"
@@ -11,10 +12,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	mg "github.com/kart-io/goagent-contrib/management"
 	"github.com/kart-io/goagent/constants"
 	"github.com/kart-io/goagent/core/durable"
 	"github.com/kart-io/goagent/core/session"
+	mg "github.com/kart-io/goagent/management"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -144,7 +145,7 @@ func recoverFaultOwner(t *testing.T, f *fixture, child *faultProcess, slot strin
 	t.Helper()
 	require.False(t, child.running)
 	document, err := f.store.Get(f.ctx, "workers", "__system", slot)
-	if errors.Is(err, mg.ErrNotFound) {
+	if errors.Is(err, agentErrors.ErrManagementNotFound) {
 		return
 	}
 	require.NoError(t, err)
@@ -156,7 +157,7 @@ func recoverFaultOwner(t *testing.T, f *fixture, child *faultProcess, slot strin
 	cfg := f.cfg
 	cfg.ConfirmWorkerStopped = func(context.Context, string, int64) error {
 		if child.running {
-			return mg.ErrBusy
+			return agentErrors.ErrManagementBusy
 		}
 		return nil
 	}

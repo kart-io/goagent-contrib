@@ -2,16 +2,17 @@ package integration_test
 
 import (
 	"context"
-	"encoding/json"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
-	mg "github.com/kart-io/goagent-contrib/management"
-	"github.com/kart-io/goagent-contrib/management/adapters"
 	"github.com/kart-io/goagent/builder"
+	"github.com/kart-io/goagent/codec/json"
 	"github.com/kart-io/goagent/constants"
 	coreSession "github.com/kart-io/goagent/core/session"
+	agentErrors "github.com/kart-io/goagent/errors"
 	"github.com/kart-io/goagent/interfaces"
 	"github.com/kart-io/goagent/llm"
+	mg "github.com/kart-io/goagent/management"
+	"github.com/kart-io/goagent/management/adapters"
 	"github.com/kart-io/goagent/tools"
 	"github.com/stretchr/testify/require"
 	"os"
@@ -157,7 +158,7 @@ func TestForkCrashAfterLogCopy(t *testing.T) {
 	cfg := f.cfg
 	cfg.ConfirmWorkerStopped = func(context.Context, string, int64) error {
 		if crashed.ProcessState == nil {
-			return mg.ErrBusy
+			return agentErrors.ErrManagementBusy
 		}
 		return nil
 	}
@@ -215,7 +216,7 @@ func TestApprovalSurvivesProcessKillAndRestart(t *testing.T) {
 	cfg := f.cfg
 	cfg.ConfirmWorkerStopped = func(context.Context, string, int64) error {
 		if child.ProcessState == nil {
-			return mg.ErrBusy
+			return agentErrors.ErrManagementBusy
 		}
 		return nil
 	}

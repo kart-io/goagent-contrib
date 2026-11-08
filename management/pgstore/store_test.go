@@ -2,10 +2,11 @@ package pgstore
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"github.com/jackc/pgx/v5/pgxpool"
-	mg "github.com/kart-io/goagent-contrib/management"
+	"github.com/kart-io/goagent/codec/json"
+	agentErrors "github.com/kart-io/goagent/errors"
+	mg "github.com/kart-io/goagent/management"
 	"github.com/stretchr/testify/require"
 	"os"
 	"testing"
@@ -36,7 +37,7 @@ func TestAdmissionRollsBackAllRecords(t *testing.T) {
 	sentinel := errors.New("注入失败")
 	require.ErrorIs(t, s.WithinTx(ctx, func(tx mg.Tx) error { require.NoError(t, tx.Insert(ctx, d)); return sentinel }), sentinel)
 	_, err := s.Get(ctx, "agents", id, id)
-	require.ErrorIs(t, err, mg.ErrNotFound)
+	require.ErrorIs(t, err, agentErrors.ErrManagementNotFound)
 }
 func TestPaginationAppliesVisibilityBeforeLimit(t *testing.T) {
 	ctx, s := database(t)
@@ -92,7 +93,7 @@ func TestConcurrentRevisionCASHasOneWinnerAndTenantForeignKeyIsEnforced(t *testi
 		err := <-outcomes
 		if err == nil {
 			successes++
-		} else if errors.Is(err, mg.ErrConflict) {
+		} else if errors.Is(err, agentErrors.ErrManagementConflict) {
 			conflicts++
 		} else {
 			t.Fatal(err)
@@ -105,5 +106,5 @@ func TestConcurrentRevisionCASHasOneWinnerAndTenantForeignKeyIsEnforced(t *testi
 	require.NoError(t, err)
 	require.ErrorIs(t, s.WithinTx(ctx, func(tx mg.Tx) error {
 		return tx.Insert(ctx, mg.Document{Kind: "versions", TenantID: version.TenantID, ID: version.ID, Revision: 1, CreatedAt: version.CreatedAt, Data: raw})
-	}), mg.ErrConflict)
+	}), agentErrors.ErrManagementConflict)
 }

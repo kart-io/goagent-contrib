@@ -2,14 +2,15 @@ package integration_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	"github.com/kart-io/goagent/codec/json"
+	agentErrors "github.com/kart-io/goagent/errors"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	mg "github.com/kart-io/goagent-contrib/management"
+	mg "github.com/kart-io/goagent/management"
 	"github.com/stretchr/testify/require"
 )
 
@@ -58,7 +59,7 @@ func TestUncooperativeRuntimeRetainsOwnerUntilActualExit(t *testing.T) {
 	ctx, cancel := context.WithTimeout(f.ctx, 30*time.Millisecond)
 	require.ErrorIs(t, w.Shutdown(ctx), context.DeadlineExceeded)
 	cancel()
-	require.ErrorIs(t, mg.NewWorker(f.s).Run(f.ctx), mg.ErrOwner)
+	require.ErrorIs(t, mg.NewWorker(f.s).Run(f.ctx), agentErrors.ErrManagementOwner)
 	close(release)
 	require.NoError(t, w.Shutdown(f.ctx))
 	current, err := f.s.GetTask(f.ctx, f.actor, task.ID)

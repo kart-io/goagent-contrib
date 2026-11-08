@@ -2,8 +2,9 @@ package integration_test
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"github.com/kart-io/goagent/codec/json"
+	agentErrors "github.com/kart-io/goagent/errors"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -11,8 +12,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	mg "github.com/kart-io/goagent-contrib/management"
-	"github.com/kart-io/goagent-contrib/management/httpapi"
+	mg "github.com/kart-io/goagent/management"
+	"github.com/kart-io/goagent/management/httpapi"
 	"github.com/stretchr/testify/require"
 )
 
@@ -29,7 +30,7 @@ func (p *resourcePolicy) Authorize(ctx context.Context, a mg.Actor, action strin
 		return err
 	}
 	if action == "approval.decide" && p.revoked.Load() {
-		return mg.ErrForbidden
+		return agentErrors.ErrManagementForbidden
 	}
 	if p.all {
 		return nil
@@ -44,7 +45,7 @@ func (p *resourcePolicy) Authorize(ctx context.Context, a mg.Actor, action strin
 			return nil
 		}
 	}
-	return mg.ErrForbidden
+	return agentErrors.ErrManagementForbidden
 }
 func (p *resourcePolicy) Scope(_ context.Context, a mg.Actor, _, _ string) (mg.Visibility, error) {
 	return mg.Visibility{All: p.all, AgentIDs: p.agentIDs, SessionIDs: p.sessionIDs, PolicyVersion: fmt.Sprint(p.version.Load())}, mg.ValidateActor(a)
@@ -70,17 +71,17 @@ func TestTenantIsolationRejectsReadWriteAndEnumeration(t *testing.T) {
 	require.NoError(t, err)
 	outsider := mg.Actor{TenantID: uuid.NewString(), Subject: "另一租户"}
 	_, err = f.s.GetAgent(f.ctx, outsider, se.AgentID)
-	require.ErrorIs(t, err, mg.ErrNotFound)
+	require.ErrorIs(t, err, agentErrors.ErrManagementNotFound)
 	_, err = f.s.GetSession(f.ctx, outsider, se.ID)
-	require.ErrorIs(t, err, mg.ErrNotFound)
+	require.ErrorIs(t, err, agentErrors.ErrManagementNotFound)
 	_, err = f.s.GetTask(f.ctx, outsider, task.ID)
-	require.ErrorIs(t, err, mg.ErrNotFound)
+	require.ErrorIs(t, err, agentErrors.ErrManagementNotFound)
 	_, err = f.s.GetRun(f.ctx, outsider, task.ID)
-	require.ErrorIs(t, err, mg.ErrNotFound)
+	require.ErrorIs(t, err, agentErrors.ErrManagementNotFound)
 	_, err = f.s.SubmitTask(f.ctx, outsider, mg.SubmitTaskRequest{IdempotencyKey: uuid.NewString(), SessionID: se.ID, Input: json.RawMessage(`"伪造关联"`)})
-	require.ErrorIs(t, err, mg.ErrNotFound)
+	require.ErrorIs(t, err, agentErrors.ErrManagementNotFound)
 	_, err = f.s.CancelTask(f.ctx, outsider, mg.CancelTaskRequest{IdempotencyKey: uuid.NewString(), TaskID: task.ID, ExpectedRevision: task.Revision})
-	require.ErrorIs(t, err, mg.ErrNotFound)
+	require.ErrorIs(t, err, agentErrors.ErrManagementNotFound)
 	tasks, err := f.s.ListTasks(f.ctx, outsider, mg.Query{AgentID: se.AgentID})
 	require.NoError(t, err)
 	require.Empty(t, tasks.Items)
@@ -111,7 +112,7 @@ func TestResourceVisibilityAndCursorPolicyAreEnforced(t *testing.T) {
 	_, err = service.GetSession(f.ctx, f.actor, first.ID)
 	require.NoError(t, err)
 	_, err = service.GetAgent(f.ctx, f.actor, other.AgentID)
-	require.ErrorIs(t, err, mg.ErrNotFound)
+	require.ErrorIs(t, err, agentErrors.ErrManagementNotFound)
 	summary, err := service.SummarizeRuns(f.ctx, f.actor, mg.Query{Limit: 1})
 	require.NoError(t, err)
 	require.Equal(t, 3, summary.Totals.Tasks)
@@ -120,9 +121,9 @@ func TestResourceVisibilityAndCursorPolicyAreEnforced(t *testing.T) {
 	require.NotEmpty(t, page.NextCursor)
 	policy.version.Add(1)
 	_, err = service.ListTasks(f.ctx, f.actor, mg.Query{Limit: 1, Cursor: page.NextCursor})
-	require.ErrorIs(t, err, mg.ErrInvalid)
+	require.ErrorIs(t, err, agentErrors.ErrManagementInvalid)
 	_, err = service.ListTasks(f.ctx, f.actor, mg.Query{Limit: 1, Cursor: page.NextCursor, SessionID: other.ID})
-	require.ErrorIs(t, err, mg.ErrInvalid)
+	require.ErrorIs(t, err, agentErrors.ErrManagementInvalid)
 	handler, err := httpapi.New(service, httpapi.Config{ActorFromRequest: func(*http.Request) (mg.Actor, error) { return f.actor, nil }})
 	require.NoError(t, err)
 	response := httptest.NewRecorder()

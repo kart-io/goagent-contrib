@@ -2,14 +2,15 @@ package integration_test
 
 import (
 	"context"
-	"encoding/json"
 	"github.com/google/uuid"
-	mg "github.com/kart-io/goagent-contrib/management"
-	"github.com/kart-io/goagent-contrib/management/adapters"
 	"github.com/kart-io/goagent/builder"
+	"github.com/kart-io/goagent/codec/json"
 	"github.com/kart-io/goagent/constants"
+	agentErrors "github.com/kart-io/goagent/errors"
 	"github.com/kart-io/goagent/interfaces"
 	"github.com/kart-io/goagent/llm"
+	mg "github.com/kart-io/goagent/management"
+	"github.com/kart-io/goagent/management/adapters"
 	"github.com/kart-io/goagent/tools"
 	"github.com/stretchr/testify/require"
 	"sync/atomic"
@@ -83,7 +84,7 @@ func TestHostRegisterPublishSessionTaskApprovalResume(t *testing.T) {
 	task, err = f.s.GetTask(f.ctx, f.actor, task.ID)
 	require.NoError(t, err)
 	_, err = f.s.ResumeTask(f.ctx, f.actor, mg.ResumeTaskRequest{IdempotencyKey: uuid.NewString(), TaskID: task.ID, ExpectedRevision: task.Revision, WaitID: ap.Wait.ID, Input: json.RawMessage(`"approve"`)})
-	require.ErrorIs(t, err, mg.ErrApprovalRequired)
+	require.ErrorIs(t, err, agentErrors.ErrManagementApprovalRequired)
 	_, err = f.s.DecideApproval(f.ctx, f.actor, mg.DecisionRequest{IdempotencyKey: uuid.NewString(), ApprovalID: ap.ID, ExpectedRevision: ap.Revision, Decision: "approve", Reason: "退款符合规则"})
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {

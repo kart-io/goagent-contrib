@@ -1,9 +1,10 @@
 package integration_test
 
 import (
-	"encoding/json"
 	"github.com/google/uuid"
-	mg "github.com/kart-io/goagent-contrib/management"
+	"github.com/kart-io/goagent/codec/json"
+	agentErrors "github.com/kart-io/goagent/errors"
+	mg "github.com/kart-io/goagent/management"
 	"github.com/stretchr/testify/require"
 	"sync/atomic"
 	"testing"
@@ -29,7 +30,7 @@ func TestForkSourceAndTargetIsolated(t *testing.T) {
 	active, e := f.s.GetSession(f.ctx, f.actor, se.ID)
 	require.NoError(t, e)
 	_, e = f.s.ForkSession(f.ctx, f.actor, mg.ForkSessionRequest{IdempotencyKey: uuid.NewString(), SessionID: se.ID, ExpectedRevision: active.Revision})
-	require.ErrorIs(t, e, mg.ErrConflict)
+	require.ErrorIs(t, e, agentErrors.ErrManagementConflict)
 	_, e = f.s.DecideApproval(f.ctx, f.actor, mg.DecisionRequest{IdempotencyKey: uuid.NewString(), ApprovalID: ap.ID, ExpectedRevision: ap.Revision, Decision: "approve"})
 	require.NoError(t, e)
 	require.Eventually(t, func() bool { v, e := f.s.GetTask(f.ctx, f.actor, task.ID); return e == nil && v.State == mg.Succeeded }, 5*time.Second, 10*time.Millisecond)

@@ -2,7 +2,7 @@ package integration_test
 
 import (
 	"context"
-	"encoding/json"
+	"github.com/kart-io/goagent/codec/json"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	mg "github.com/kart-io/goagent-contrib/management"
-	"github.com/kart-io/goagent-contrib/management/httpapi"
 	"github.com/kart-io/goagent/core/usage"
 	"github.com/kart-io/goagent/interfaces"
+	mg "github.com/kart-io/goagent/management"
+	"github.com/kart-io/goagent/management/httpapi"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/trace"
 )

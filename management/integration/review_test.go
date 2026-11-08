@@ -2,10 +2,11 @@ package integration_test
 
 import (
 	"context"
-	"encoding/json"
 	"github.com/google/uuid"
-	mg "github.com/kart-io/goagent-contrib/management"
+	"github.com/kart-io/goagent/codec/json"
+	agentErrors "github.com/kart-io/goagent/errors"
 	"github.com/kart-io/goagent/interfaces"
+	mg "github.com/kart-io/goagent/management"
 	"github.com/stretchr/testify/require"
 	"sync/atomic"
 	"testing"
@@ -93,7 +94,7 @@ func TestReviewValidateHonorsShutdownDeadline(t *testing.T) {
 	select {
 	case err := <-done:
 		require.ErrorIs(t, err, context.DeadlineExceeded)
-		require.ErrorIs(t, mg.NewWorker(f.s).Run(f.ctx), mg.ErrOwner)
+		require.ErrorIs(t, mg.NewWorker(f.s).Run(f.ctx), agentErrors.ErrManagementOwner)
 	case <-time.After(200 * time.Millisecond):
 		t.Error("Shutdown超过期限仍被BeginShutdown阻塞")
 	}

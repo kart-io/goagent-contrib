@@ -2,10 +2,11 @@ package integration_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"github.com/google/uuid"
-	mg "github.com/kart-io/goagent-contrib/management"
+	"github.com/kart-io/goagent/codec/json"
+	agentErrors "github.com/kart-io/goagent/errors"
+	mg "github.com/kart-io/goagent/management"
 	"github.com/stretchr/testify/require"
 	"sync/atomic"
 	"testing"
@@ -107,7 +108,7 @@ func TestSecondWorkerRejected(t *testing.T) {
 	other := mg.NewWorker(f.s)
 	ctx, cancel := context.WithTimeout(f.ctx, time.Second)
 	defer cancel()
-	require.ErrorIs(t, other.Run(ctx), mg.ErrOwner)
+	require.ErrorIs(t, other.Run(ctx), agentErrors.ErrManagementOwner)
 }
 func TestConcurrentDecisionsHaveOneWinner(t *testing.T) {
 	var effects, requests atomic.Int32
@@ -138,7 +139,7 @@ func TestConcurrentDecisionsHaveOneWinner(t *testing.T) {
 		if e == nil {
 			wins++
 		} else {
-			require.True(t, errors.Is(e, mg.ErrConflict), e)
+			require.True(t, errors.Is(e, agentErrors.ErrManagementConflict), e)
 		}
 	}
 	require.Equal(t, 1, wins)

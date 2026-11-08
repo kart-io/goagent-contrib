@@ -2,7 +2,8 @@ package integration_test
 
 import (
 	"context"
-	"encoding/json"
+	"github.com/kart-io/goagent/codec/json"
+	agentErrors "github.com/kart-io/goagent/errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,9 +12,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
-	mg "github.com/kart-io/goagent-contrib/management"
-	"github.com/kart-io/goagent-contrib/management/httpapi"
 	db "github.com/kart-io/goagent-contrib/management/pgstore"
+	mg "github.com/kart-io/goagent/management"
+	"github.com/kart-io/goagent/management/httpapi"
 	"github.com/stretchr/testify/require"
 )
 
@@ -65,7 +66,7 @@ func (s rollbackAfterCallbackStore) WithinTx(ctx context.Context, fn func(mg.Tx)
 		if err := fn(tx); err != nil {
 			return err
 		}
-		return mg.ErrUnavailable
+		return agentErrors.ErrManagementUnavailable
 	})
 }
 func TestAdmissionAndDecisionRollbackAllManagementRecords(t *testing.T) {
@@ -79,7 +80,7 @@ func TestAdmissionAndDecisionRollbackAllManagementRecords(t *testing.T) {
 	require.NoError(t, err)
 	request := mg.SubmitTaskRequest{IdempotencyKey: uuid.NewString(), SessionID: se.ID, Input: json.RawMessage(`"事务中止"`)}
 	_, err = failing.SubmitTask(f.ctx, f.actor, request)
-	require.ErrorIs(t, err, mg.ErrUnavailable)
+	require.ErrorIs(t, err, agentErrors.ErrManagementUnavailable)
 	page, err := f.s.ListTasks(f.ctx, f.actor, mg.Query{SessionID: se.ID})
 	require.NoError(t, err)
 	require.Empty(t, page.Items)
@@ -95,10 +96,10 @@ func TestAdmissionAndDecisionRollbackAllManagementRecords(t *testing.T) {
 	current, err := f.s.GetTask(f.ctx, f.actor, task.ID)
 	require.NoError(t, err)
 	_, err = f.s.ResumeTask(f.ctx, f.actor, mg.ResumeTaskRequest{IdempotencyKey: uuid.NewString(), TaskID: task.ID, ExpectedRevision: current.Revision, WaitID: ap.Wait.ID, Input: json.RawMessage(`{"decision":"approve"}`)})
-	require.ErrorIs(t, err, mg.ErrApprovalRequired)
+	require.ErrorIs(t, err, agentErrors.ErrManagementApprovalRequired)
 	decision := mg.DecisionRequest{IdempotencyKey: uuid.NewString(), ApprovalID: ap.ID, ExpectedRevision: ap.Revision, Decision: "approve", Reason: "核验通过"}
 	_, err = failing.DecideApproval(f.ctx, f.actor, decision)
-	require.ErrorIs(t, err, mg.ErrUnavailable)
+	require.ErrorIs(t, err, agentErrors.ErrManagementUnavailable)
 	after, err := f.s.GetApproval(f.ctx, f.actor, ap.ID)
 	require.NoError(t, err)
 	require.Equal(t, "pending", after.State)

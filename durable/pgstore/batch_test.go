@@ -3,13 +3,13 @@ package pgstore
 import (
 	"context"
 	"encoding/json"
-	"github.com/kart-io/goagent/constants"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/kart-io/goagent/constants"
 	"github.com/kart-io/goagent/core/durable"
 	"github.com/kart-io/goagent/core/session"
 	agentErrors "github.com/kart-io/goagent/errors"

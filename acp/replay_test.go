@@ -3,13 +3,14 @@ package acp
 import (
 	"context"
 	"errors"
-	"github.com/kart-io/goagent/constants"
 	"testing"
 
 	acpsdk "github.com/coder/acp-go-sdk"
+	"github.com/stretchr/testify/require"
+
+	"github.com/kart-io/goagent/constants"
 	"github.com/kart-io/goagent/core/session"
 	"github.com/kart-io/goagent/llm"
-	"github.com/stretchr/testify/require"
 )
 
 func TestLoadSessionReplaysAndContinues(t *testing.T) {

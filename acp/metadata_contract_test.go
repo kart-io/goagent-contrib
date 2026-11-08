@@ -3,13 +3,15 @@ package acp
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+	"testing"
+
 	acpsdk "github.com/coder/acp-go-sdk"
+	"github.com/stretchr/testify/require"
+
 	"github.com/kart-io/goagent/constants"
 	"github.com/kart-io/goagent/core/session"
 	agentErrors "github.com/kart-io/goagent/errors"
-	"github.com/stretchr/testify/require"
-	"path/filepath"
-	"testing"
 )
 
 func TestListPersistsBeforePromptAcrossStoreReopen(t *testing.T) {

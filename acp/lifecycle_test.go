@@ -2,16 +2,17 @@ package acp
 
 import (
 	"context"
-	"github.com/kart-io/goagent/constants"
 	"io"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	acpsdk "github.com/coder/acp-go-sdk"
-	"github.com/kart-io/goagent/builder"
-	"github.com/kart-io/goagent/core/session"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kart-io/goagent/builder"
+	"github.com/kart-io/goagent/constants"
+	"github.com/kart-io/goagent/core/session"
 )
 
 // recv 在有限时间内从 ch 取一个值，超时则测试失败。

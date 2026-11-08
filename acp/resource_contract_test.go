@@ -3,14 +3,16 @@ package acp
 import (
 	"context"
 	"errors"
-	acpsdk "github.com/coder/acp-go-sdk"
-	"github.com/kart-io/goagent/builder"
-	"github.com/kart-io/goagent/constants"
-	"github.com/kart-io/goagent/core/session"
-	"github.com/stretchr/testify/require"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	acpsdk "github.com/coder/acp-go-sdk"
+	"github.com/stretchr/testify/require"
+
+	"github.com/kart-io/goagent/builder"
+	"github.com/kart-io/goagent/constants"
+	"github.com/kart-io/goagent/core/session"
 )
 
 func TestFactoryFailureReleasesRegisteredResources(t *testing.T) {

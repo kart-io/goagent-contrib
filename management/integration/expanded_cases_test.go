@@ -40,7 +40,7 @@ func TestExpandedForkRejectsDisabledAgent(t *testing.T) {
 	page, err := f.s.ListSessions(f.ctx, f.actor, mg.Query{AgentID: agent.ID})
 	require.NoError(t, err)
 	require.Len(t, page.Items, 1, "拒绝的Fork不得留下子会话")
-	_, err = f.s.SetAgentEnabled(f.ctx, f.actor, mg.SetEnabledRequest{IdempotencyKey: uuid.NewString(), AgentID: agent.ID, ExpectedRevision: agent.Revision, Enabled: true})
+	agent, err = f.s.SetAgentEnabled(f.ctx, f.actor, mg.SetEnabledRequest{IdempotencyKey: uuid.NewString(), AgentID: agent.ID, ExpectedRevision: agent.Revision, Enabled: true})
 	require.NoError(t, err)
 	branch, err := f.s.ForkSession(f.ctx, f.actor, request)
 	require.NoError(t, err, "失败请求不得消耗幂等键，启用后可重试")
@@ -49,6 +49,14 @@ func TestExpandedForkRejectsDisabledAgent(t *testing.T) {
 		current, e := f.s.GetSession(f.ctx, f.actor, branch.ID)
 		return e == nil && current.Status == "ready"
 	}, 5*time.Second, 10*time.Millisecond)
+	_, err = f.s.SetAgentEnabled(f.ctx, f.actor, mg.SetEnabledRequest{IdempotencyKey: uuid.NewString(), AgentID: agent.ID, ExpectedRevision: agent.Revision, Enabled: false})
+	require.NoError(t, err)
+	replayed, err := f.s.ForkSession(f.ctx, f.actor, request)
+	require.NoError(t, err, "已成功接纳的幂等重投不属于停用后新建会话")
+	require.Equal(t, branch, replayed, "应复用原始preparing响应，而不是另建或返回当前会话状态")
+	page, err = f.s.ListSessions(f.ctx, f.actor, mg.Query{AgentID: agent.ID})
+	require.NoError(t, err)
+	require.Len(t, page.Items, 2)
 }
 
 func TestExpandedTenantIdempotencyKeysAreIndependent(t *testing.T) {

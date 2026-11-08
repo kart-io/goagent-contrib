@@ -46,3 +46,5 @@ bash scripts/with-local-modules.sh go -C management test -race -count=1 -run '^T
 ```
 
 运行前沿用上文设置GOAGENT_CORE_ROOT、GOAGENT_PGSTORE_DSN；GOAGENT_CASE_CONTAINER必须指向同一个专用Postgres。四项新增数据库业务案例验证：停用Fork及启用后重试、跨租户同幂等键隔离、容量拒绝在取消释放后重新接纳、普通输入等待在重建宿主后续跑（含无效输入拒绝和SQL效果一次）。
+
+数据库重启回归（设置GOAGENT_PGSTORE_CONTAINER）必须使用固定主机端口；Docker自动分配的端口可能在重启后变化，原DSN将失效。HTTP案例可使用独立容器，避免被数据库故障注入中断。

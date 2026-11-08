@@ -397,10 +397,16 @@ class Cases:
         self.call("POST", fork_path, request, key=fork_key, expected=409)
         check(self.sql(f"SELECT count(*) FROM mg_sessions WHERE tenant_id='demo' AND data->>'agent_id'='{aid}'") == before_sessions,
               "停用期间Fork留下子会话")
-        self.call("POST", f"/v1/agents/{aid}/enable", {"expected_revision": disabled["revision"]})
+        enabled = self.call("POST", f"/v1/agents/{aid}/enable", {"expected_revision": disabled["revision"]})
         retried = self.call("POST", fork_path, request, key=fork_key, expected=202)
         self.wait("/v1/sessions/" + retried["id"], lambda item: item["status"] == "ready")
-        self.record("停用阻止Fork且启用后原键重试", 停用ForkHTTP=409, 拒绝未新增会话=True, 启用后同键成功=True)
+        self.call("POST", f"/v1/agents/{aid}/disable", {"expected_revision": enabled["revision"]})
+        before_replay = self.sql(f"SELECT count(*) FROM mg_sessions WHERE tenant_id='demo' AND data->>'agent_id'='{aid}'")
+        replayed = self.call("POST", fork_path, request, key=fork_key, expected=202)
+        check(replayed == retried, "停用后没有复用先前已接纳的Fork响应")
+        check(self.sql(f"SELECT count(*) FROM mg_sessions WHERE tenant_id='demo' AND data->>'agent_id'='{aid}'") == before_replay,
+              "成功Fork的同键重投又创建了会话")
+        self.record("停用阻止Fork且启用后原键重试", 停用ForkHTTP=409, 拒绝未新增会话=True, 启用后同键成功=True, 成功后停用重投仍复用=True)
 
         summary = self.call("GET", f"/v1/runs/summary?agent_id={aid}&limit=1")
         check(summary["totals"]["tasks"] == 4 and summary["totals"]["known_tokens"]["total_tokens"] == 30,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	acpsdk "github.com/coder/acp-go-sdk"
+	"github.com/kart-io/goagent/constants"
 	"github.com/kart-io/goagent/core/session"
 	agentErrors "github.com/kart-io/goagent/errors"
 	"github.com/stretchr/testify/require"
@@ -43,7 +44,7 @@ func TestListPaginationAndLegacyMetadata(t *testing.T) {
 		_, err = store.Append(context.Background(), fmt.Sprintf("s%03d", i), 0, meta)
 		require.NoError(t, err)
 	}
-	legacy, err := session.NewEvent(session.TypeTurnStart, map[string]any{})
+	legacy, err := session.NewEvent(constants.SessionEventTurnStart, map[string]any{})
 	require.NoError(t, err)
 	_, err = store.Append(context.Background(), "legacy", 0, legacy)
 	require.NoError(t, err)

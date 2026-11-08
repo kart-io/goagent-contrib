@@ -3,6 +3,7 @@ package acp
 import (
 	"context"
 	"errors"
+	"github.com/kart-io/goagent/constants"
 	"testing"
 
 	acpsdk "github.com/coder/acp-go-sdk"
@@ -184,9 +185,9 @@ func TestLoadSessionSkipsAbortedTurn(t *testing.T) {
 	h.initialize(t, acpsdk.ClientCapabilities{})
 	id := h.newSession(t, dir)
 
-	begin, err := session.NewEvent(session.TypeTurnStart, session.TurnStart{Input: "问一"})
+	begin, err := session.NewEvent(constants.SessionEventTurnStart, session.TurnStart{Input: "问一"})
 	require.NoError(t, err)
-	user, err := session.NewEvent(session.TypeUserMessage, session.MessageData{Message: llm.Message{Role: "user", Content: "问一"}})
+	user, err := session.NewEvent(constants.SessionEventUserMessage, session.MessageData{Message: llm.Message{Role: "user", Content: "问一"}})
 	require.NoError(t, err)
 	existing, err := store.Read(context.Background(), string(id), 0)
 	require.NoError(t, err)

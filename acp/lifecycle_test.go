@@ -2,6 +2,7 @@ package acp
 
 import (
 	"context"
+	"github.com/kart-io/goagent/constants"
 	"io"
 	"sync/atomic"
 	"testing"
@@ -148,7 +149,7 @@ func TestRunnerClosedOnSessionClose(t *testing.T) {
 // 回放失败时回滚加载，已构建的 Runner 被关闭。
 func TestRunnerClosedOnLoadRollback(t *testing.T) {
 	store := session.NewMemoryStore()
-	bad := session.Event{Type: session.TypeUserMessage, Time: time.Now(), Data: []byte(`"不是消息"`)}
+	bad := session.Event{Type: constants.SessionEventUserMessage, Time: time.Now(), Data: []byte(`"不是消息"`)}
 	_, err := store.Append(context.Background(), "sess_bad", 0, bad)
 	require.NoError(t, err)
 

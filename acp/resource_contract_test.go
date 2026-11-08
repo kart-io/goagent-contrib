@@ -5,6 +5,7 @@ import (
 	"errors"
 	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/kart-io/goagent/builder"
+	"github.com/kart-io/goagent/constants"
 	"github.com/kart-io/goagent/core/session"
 	"github.com/stretchr/testify/require"
 	"sync/atomic"
@@ -101,7 +102,7 @@ func TestRollbackKeepsIDReservedUntilCleanupFinishes(t *testing.T) {
 	endTurnTimeout = 50 * time.Millisecond
 	t.Cleanup(func() { endTurnTimeout = old })
 	store := session.NewMemoryStore()
-	_, err := store.Append(context.Background(), "blocked", 0, session.Event{Type: session.TypeUserMessage, Data: []byte(`"坏消息"`)})
+	_, err := store.Append(context.Background(), "blocked", 0, session.Event{Type: constants.SessionEventUserMessage, Data: []byte(`"坏消息"`)})
 	require.NoError(t, err)
 	gate := make(chan struct{})
 	var calls atomic.Int32

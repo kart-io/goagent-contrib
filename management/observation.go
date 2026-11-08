@@ -16,6 +16,7 @@ func millisBetween(from, to time.Time) int64 {
 	return to.Sub(from).Milliseconds()
 }
 func projectDurations(run *Run, now time.Time) {
+	run.DurationComplete = true
 	end := now
 	if run.Task.FinishedAt != nil {
 		end = *run.Task.FinishedAt
@@ -32,6 +33,13 @@ func projectDurations(run *Run, now time.Time) {
 		finish := end
 		if attempt.FinishedAt != nil {
 			finish = *attempt.FinishedAt
+		} else {
+			run.DurationComplete = false
+			run.UnfinishedAttempts++
+			// 崩溃旧尝试没有可靠退出时间，不把停机或后续尝试区间算成已知执行。
+			if i+1 < len(attempts) || run.Task.State.Terminal() || (run.Task.State != Running && run.Task.State != Canceling) {
+				continue
+			}
 		}
 		run.ExecutionMillis += millisBetween(attempt.CreatedAt, finish)
 		if attempt.TraceID != "" {
@@ -54,17 +62,19 @@ func projectDurations(run *Run, now time.Time) {
 }
 
 type RunTotals struct {
-	Tasks           int                    `json:"tasks"`
-	Attempts        int                    `json:"attempts"`
-	States          map[TaskState]int      `json:"states"`
-	KnownRuns       int                    `json:"known_runs"`
-	UnknownRuns     int                    `json:"unknown_runs"`
-	PartialRuns     int                    `json:"partial_runs"`
-	KnownTokens     *interfaces.TokenUsage `json:"known_tokens"`
-	QueuedMillis    int64                  `json:"queued_millis"`
-	ExecutionMillis int64                  `json:"execution_millis"`
-	WaitingMillis   int64                  `json:"waiting_millis"`
-	Complete        bool                   `json:"complete"`
+	DurationComplete       bool                   `json:"duration_complete"`
+	DurationIncompleteRuns int                    `json:"duration_incomplete_runs"`
+	Tasks                  int                    `json:"tasks"`
+	Attempts               int                    `json:"attempts"`
+	States                 map[TaskState]int      `json:"states"`
+	KnownRuns              int                    `json:"known_runs"`
+	UnknownRuns            int                    `json:"unknown_runs"`
+	PartialRuns            int                    `json:"partial_runs"`
+	KnownTokens            *interfaces.TokenUsage `json:"known_tokens"`
+	QueuedMillis           int64                  `json:"queued_millis"`
+	ExecutionMillis        int64                  `json:"execution_millis"`
+	WaitingMillis          int64                  `json:"waiting_millis"`
+	Complete               bool                   `json:"complete"`
 }
 type RunGroup struct {
 	ID string `json:"id"`
@@ -80,7 +90,11 @@ type AgentUsageTotal struct {
 }
 
 type RunSummary struct {
-	AgentUsage []AgentUsageTotal `json:"agent_usage"`
+	UnattributedKnownEntries   int               `json:"unattributed_known_entries"`
+	UnattributedUnknownEntries int               `json:"unattributed_unknown_entries"`
+	UnattributedPartialEntries int               `json:"unattributed_partial_entries"`
+	UnattributedComplete       bool              `json:"unattributed_complete"`
+	AgentUsage                 []AgentUsageTotal `json:"agent_usage"`
 	// CreatedTo 仅固定创建时间范围；各运行证据在扫描时读取，不承诺跨页事务快照。
 	CreatedTo    time.Time              `json:"created_to"`
 	Totals       RunTotals              `json:"totals"`
@@ -109,6 +123,11 @@ func addRunTotals(dst *RunTotals, run Run, known *interfaces.TokenUsage) error {
 	if dst.States == nil {
 		dst.States = map[TaskState]int{}
 		dst.Complete = true
+		dst.DurationComplete = true
+	}
+	if !run.DurationComplete {
+		dst.DurationComplete = false
+		dst.DurationIncompleteRuns++
 	}
 	dst.Tasks++
 	dst.Attempts += len(run.Attempts)
@@ -133,7 +152,7 @@ func addRunTotals(dst *RunTotals, run Run, known *interfaces.TokenUsage) error {
 // Session 与总量每个根运行只加一次；Agent 用量只取该 Agent 的 self，
 // 子 Agent 与未归属消耗不冒充顶层 Agent 消耗。没有证据时保留 null 与未知计数。
 func (s *Service) SummarizeRuns(ctx context.Context, a Actor, q Query) (RunSummary, error) {
-	out := RunSummary{Agents: []RunGroup{}, Sessions: []RunGroup{}, Totals: RunTotals{States: map[TaskState]int{}, Complete: true}}
+	out := RunSummary{Agents: []RunGroup{}, Sessions: []RunGroup{}, UnattributedComplete: true, Totals: RunTotals{States: map[TaskState]int{}, Complete: true, DurationComplete: true}}
 	if q.Cursor != "" {
 		return out, ErrInvalid
 	}
@@ -174,9 +193,20 @@ func (s *Service) SummarizeRuns(ctx context.Context, a Actor, q Query) (RunSumma
 						}
 					}
 				}
-				if err = addTokens(&out.Unattributed, run.Usage.Unattributed.KnownTokens); err != nil {
-					return out, err
+				unknown := run.Usage.Unattributed
+				out.UnattributedKnownEntries += unknown.KnownUsageEntries
+				out.UnattributedUnknownEntries += unknown.UnknownUsageEntries
+				out.UnattributedPartialEntries += unknown.PartialUsageEntries
+				if unknown.UnknownUsageEntries > 0 || unknown.PartialUsageEntries > 0 {
+					out.UnattributedComplete = false
 				}
+				if unknown.KnownUsageEntries > 0 || unknown.UnknownUsageEntries == 0 {
+					if err = addTokens(&out.Unattributed, unknown.KnownTokens); err != nil {
+						return out, err
+					}
+				}
+			} else {
+				out.UnattributedComplete = false
 			}
 			if err = addRunTotals(&out.Totals, run, root); err != nil {
 				return out, err

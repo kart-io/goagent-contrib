@@ -186,16 +186,18 @@ func (s *Service) History(ctx context.Context, a Actor, r HistoryRequest) (Histo
 }
 
 type Run struct {
-	QueuedMillis    int64                     `json:"queued_millis"`
-	ExecutionMillis int64                     `json:"execution_millis"`
-	WaitingMillis   int64                     `json:"waiting_millis"`
-	ElapsedMillis   int64                     `json:"elapsed_millis"`
-	TraceID         string                    `json:"trace_id,omitempty"`
-	Task            Task                      `json:"task"`
-	Attempts        []Attempt                 `json:"attempts"`
-	Usage           *budget.AttributionReport `json:"usage"`
-	Complete        bool                      `json:"complete"`
-	UsageStatus     string                    `json:"usage_status"`
+	DurationComplete   bool                      `json:"duration_complete"`
+	UnfinishedAttempts int                       `json:"unfinished_attempts"`
+	QueuedMillis       int64                     `json:"queued_millis"`
+	ExecutionMillis    int64                     `json:"execution_millis"`
+	WaitingMillis      int64                     `json:"waiting_millis"`
+	ElapsedMillis      int64                     `json:"elapsed_millis"`
+	TraceID            string                    `json:"trace_id,omitempty"`
+	Task               Task                      `json:"task"`
+	Attempts           []Attempt                 `json:"attempts"`
+	Usage              *budget.AttributionReport `json:"usage"`
+	Complete           bool                      `json:"complete"`
+	UsageStatus        string                    `json:"usage_status"`
 }
 
 func (s *Service) GetRun(ctx context.Context, a Actor, id string) (Run, error) {

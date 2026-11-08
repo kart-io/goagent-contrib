@@ -170,7 +170,7 @@ func recoverFaultOwner(t *testing.T, f *fixture, child *faultProcess, slot strin
 	require.NoError(t, err)
 }
 func TestRestartAtEveryCommitBoundary(t *testing.T) {
-	for _, stage := range []string{"admission", "create_log", "answer_before", "answer_after", "turn_end", "outcome", "sql_before", "sql_after", "effect_after_apply"} {
+	for _, stage := range []string{"admission", "create_log", "answer_before", "answer_after", "turn_end", "outcome", "sql_before", "sql_after", "effect_after_apply", "effect_after_apply_cancel"} {
 		t.Run(stage, func(t *testing.T) {
 			f := setup(t, nil)
 			_, err := f.pool.Exec(f.ctx, `CREATE TABLE mg_case_counters(tenant text,kind text,n integer,PRIMARY KEY(tenant,kind))`)
@@ -179,6 +179,9 @@ func TestRestartAtEveryCommitBoundary(t *testing.T) {
 			se, err := f.s.CreateSession(f.ctx, f.actor, mg.CreateSessionRequest{IdempotencyKey: uuid.NewString(), AgentID: agent.ID})
 			require.NoError(t, err)
 			initialStage := stage
+			if stage == "effect_after_apply_cancel" {
+				initialStage = "effect_after_apply"
+			}
 			if stage == "admission" {
 				initialStage = ""
 			}
@@ -211,6 +214,12 @@ func TestRestartAtEveryCommitBoundary(t *testing.T) {
 				require.NoError(t, err)
 				waitFaultProcess(t, child, 42)
 			}
+			if stage == "effect_after_apply_cancel" {
+				current, e := f.s.GetTask(f.ctx, f.actor, task.ID)
+				require.NoError(t, e)
+				_, e = f.s.CancelTask(f.ctx, f.actor, mg.CancelTaskRequest{IdempotencyKey: uuid.NewString(), TaskID: task.ID, ExpectedRevision: current.Revision, Reason: "中断后取消"})
+				require.NoError(t, e)
+			}
 			recoverFaultOwner(t, f, child, "default")
 			resumed := startFaultProcess(t, f, "")
 			require.Eventually(t, func() bool {
@@ -233,7 +242,7 @@ func TestRestartAtEveryCommitBoundary(t *testing.T) {
 					require.NoError(t, err)
 				}
 				want := mg.Succeeded
-				if stage == "effect_after_apply" {
+				if strings.HasPrefix(stage, "effect_after_apply") {
 					want = mg.Attention
 				}
 				if !assert.Eventually(t, func() bool {
@@ -253,7 +262,7 @@ func TestRestartAtEveryCommitBoundary(t *testing.T) {
 				require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT n FROM mg_case_counters WHERE tenant=$1 AND kind='effect'`, f.actor.TenantID).Scan(&effect))
 				require.Equal(t, 1, effect)
 				expectedModels := 2
-				if stage == "effect_after_apply" {
+				if strings.HasPrefix(stage, "effect_after_apply") {
 					expectedModels = 1
 				}
 				require.Equal(t, expectedModels, model)

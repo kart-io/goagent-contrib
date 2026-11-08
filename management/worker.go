@@ -292,18 +292,67 @@ func (w *Worker) commandState(ctx context.Context, c Command, state string, caus
 		return update(ctx, tx, "commands", cur, old)
 	})
 }
+func (w *Worker) blockStart(ctx context.Context, c Command, err error) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if errors.Is(err, errAgentDisabled) || errors.Is(err, ErrForbidden) || errors.Is(err, ErrUnauthenticated) || errors.Is(err, ErrUnsupported) {
+		if e := w.commandState(ctx, c, "blocked", err); e != nil {
+			return e
+		}
+		return ErrBusy
+	}
+	return err
+}
 func (w *Worker) start(ctx context.Context, c Command) error {
 	w.mu.Lock()
-	defer w.mu.Unlock()
 	if w.closing || len(w.live) >= w.s.cfg.Limits.Workers || w.live[c.TaskID] != nil {
+		w.mu.Unlock()
 		return ErrBusy
+	}
+	// 构造前预留槽位；生命周期锁不包数据库或宿主校验。
+	// 即使校验不响应取消，Shutdown也能按期限返回，并保留owner等待它实际退出。
+	parent := ctx
+	ctx, cancel := context.WithCancel(ctx)
+	w.live[c.TaskID] = cancel
+	w.wg.Add(1)
+	w.mu.Unlock()
+	launched := false
+	defer func() {
+		if !launched {
+			cancel()
+			w.mu.Lock()
+			delete(w.live, c.TaskID)
+			w.mu.Unlock()
+			w.wg.Done()
+		}
+	}()
+	preview, err := read[Task](ctx, w.s.cfg.Store, "tasks", c.TenantID, c.TaskID)
+	if err != nil {
+		return err
+	}
+	if !preview.State.Terminal() {
+		version, e := read[Version](ctx, w.s.cfg.Store, "versions", c.TenantID, versionID(preview.AgentID, preview.Version))
+		if e != nil {
+			return e
+		}
+		factory := w.s.cfg.Factories[version.RunnerKind]
+		if factory == nil {
+			return w.blockStart(ctx, c, ErrUnsupported)
+		}
+		if _, e = factory.Validate(ctx, version); e != nil {
+			return w.blockStart(ctx, c, ErrUnsupported)
+		}
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
 	var task Task
 	var se Session
 	var v Version
 	var attempt Attempt
 	var inputs map[string]string
-	err := w.s.cfg.Store.WithinTx(ctx, func(tx Tx) error {
+	err = w.s.cfg.Store.WithinTx(ctx, func(tx Tx) error {
 		cur, e := read[Command](ctx, tx, "commands", c.TenantID, c.ID)
 		if e != nil {
 			return e
@@ -317,6 +366,7 @@ func (w *Worker) start(ctx context.Context, c Command) error {
 		}
 		if task.State.Terminal() {
 			cur.State = "applied"
+			cur.ErrorKind = ""
 			old := cur.Revision
 			cur.Revision++
 			return update(ctx, tx, "commands", cur, old)
@@ -339,11 +389,7 @@ func (w *Worker) start(ctx context.Context, c Command) error {
 		if e != nil {
 			return e
 		}
-		factory := w.s.cfg.Factories[v.RunnerKind]
-		if factory == nil {
-			return ErrUnsupported
-		}
-		if _, e = factory.Validate(ctx, v); e != nil {
+		if w.s.cfg.Factories[v.RunnerKind] == nil {
 			return ErrUnsupported
 		}
 		if task.State != Queued && c.Kind != "resume" {
@@ -435,20 +481,16 @@ func (w *Worker) start(ctx context.Context, c Command) error {
 		return update(ctx, tx, "commands", cur, old)
 	})
 	if err != nil {
-		if errors.Is(err, errAgentDisabled) || errors.Is(err, ErrForbidden) || errors.Is(err, ErrUnauthenticated) || errors.Is(err, ErrUnsupported) {
-			if e := w.commandState(ctx, c, "blocked", err); e != nil {
-				return e
-			}
-			return ErrBusy
-		}
-		return err
+		return w.blockStart(ctx, c, err)
 	}
 	if task.State != Running || attempt.ID == "" {
 		return nil
 	}
-	runCtx, cancel := context.WithCancel(ctx)
-	w.live[task.ID] = cancel
-	w.wg.Add(1)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	runCtx := ctx
+	launched = true
 	go func() {
 		defer w.wg.Done()
 		defer cancel()
@@ -469,7 +511,7 @@ func (w *Worker) start(ctx context.Context, c Command) error {
 				w.report("trace", e)
 			}
 		}
-		w.execute(traced, ctx, c, task, se, v, attempt, inputs)
+		w.execute(traced, parent, c, task, se, v, attempt, inputs)
 	}()
 	return nil
 }
@@ -590,6 +632,14 @@ func (w *Worker) execute(ctx, parent context.Context, c Command, t Task, se Sess
 	if evidence.State == "completed" {
 		result = evidence.Result
 		runErr = w.confirmOutcome(ctx, j, t, v, &result)
+		return
+	}
+	if evidence.State != "absent" && evidence.State != "waiting" && (c.ReconciliationRef == "" || t.CancelRequested) {
+		result = evidence.Result
+		result.Outcome = "attention"
+		if result.ErrorKind == "" {
+			result.ErrorKind = "unknown_evidence"
+		}
 		return
 	}
 	if t.CancelRequested {

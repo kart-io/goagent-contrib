@@ -3,6 +3,7 @@ package management
 import (
 	"context"
 	"github.com/kart-io/goagent/core/budget"
+	"github.com/kart-io/goagent/core/durable"
 	"github.com/kart-io/goagent/core/session"
 	"testing"
 	"time"
@@ -17,6 +18,63 @@ func (s reviewStore) Get(_ context.Context, k, t, id string) (Document, error) {
 		return d, ErrNotFound
 	}
 	return d, nil
+}
+
+type verifiedReader struct{ record Reconciliation }
+
+func (r verifiedReader) Lookup(context.Context, Actor, string) (Reconciliation, error) {
+	return r.record, nil
+}
+
+type proofRuntime struct {
+	unknownR
+	seen *Reconciliation
+}
+
+func (f *proofRuntime) Build(context.Context, Version, Resources) (Binding, error) {
+	return Binding{Runtime: f}, nil
+}
+func (f *proofRuntime) Reconcile(_ context.Context, spec RunSpec, rec Reconciliation) (RunEvidence, error) {
+	if spec.Reconciliation == nil {
+		return RunEvidence{}, ErrInvalid
+	}
+	f.seen = &rec
+	return RunEvidence{State: "completed", Result: RunResult{Outcome: "completed", Output: []byte(`1`)}}, nil
+}
+func TestReconciliationEvidencePersistedAndApplied(t *testing.T) {
+	w, task, se, _, at := setupR(t)
+	ctx := context.Background()
+	s := w.s
+	s.cfg.Authorizer = TenantAuthorizer{}
+	task.State = Attention
+	task.Operations = []durable.OperationRef{{ParentKey: "parent", ID: "external-write"}}
+	task.Revision++
+	if e := update(ctx, s.cfg.Store.(Tx), "tasks", task, 1); e != nil {
+		t.Fatal(e)
+	}
+	v := Version{Meta: Meta{ID: "@", TenantID: "tenant", Revision: 1}, RunnerKind: "proof", ConfigHash: "hash", Capabilities: Capabilities{Reconcile: true}}
+	if e := insert(ctx, s.cfg.Store.(Tx), "versions", v); e != nil {
+		t.Fatal(e)
+	}
+	rec := Reconciliation{ID: "record", TenantID: "tenant", TaskID: "task", VersionHash: "hash", EvidenceHash: "immutable-proof", VerifiedBy: "admin", VerifiedAt: time.Now(), Resolution: "applied", OperationRefs: task.Operations}
+	s.cfg.Reconciliations = verifiedReader{rec}
+	runtime := &proofRuntime{}
+	s.cfg.Factories = map[string]Factory{"proof": runtime}
+	c, e := s.ResumeTask(ctx, Actor{TenantID: "tenant", Subject: "admin"}, ResumeTaskRequest{IdempotencyKey: "proof", TaskID: "task", ExpectedRevision: 2, ReconciliationRef: "record"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	saved, e := read[Command](ctx, s.cfg.Store, "commands", "tenant", c.ID)
+	if e != nil || saved.ReconciliationRef != "record" || saved.ReconciliationHash != rec.EvidenceHash {
+		t.Fatalf("证据未持久化：%+v %v", saved, e)
+	}
+	ev, _ := session.NewEvent("management/session", "session")
+	_, _ = s.cfg.Sessions.Append(ctx, se.LogID, 0, ev)
+	w.execute(ctx, ctx, c, task, se, v, at, nil)
+	got, e := read[Task](ctx, s.cfg.Store, "tasks", "tenant", "task")
+	if e != nil || got.State != Succeeded || runtime.calls != 0 || runtime.seen == nil || runtime.seen.Resolution != "applied" {
+		t.Fatalf("核对后只能补记结果，不得普通重跑：%+v %v", got, e)
+	}
 }
 func (s reviewStore) List(_ context.Context, k string, q Selection) ([]Document, error) {
 	r := []Document{}

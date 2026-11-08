@@ -63,9 +63,9 @@ func TestSessionSnapshotRequiresLock(t *testing.T) {
 	dsn, schema := newSchema(t)
 	s := newSessionStore(t, dsn, schema)
 	ctx := context.Background()
-	msg, err := session.NewEvent(session.TypeUserMessage, session.MessageData{Message: llm.UserMessage("一")})
+	msg, err := session.NewEvent(shared.SessionEventUserMessage, session.MessageData{Message: llm.UserMessage("一")})
 	require.NoError(t, err)
-	snap, err := session.NewEvent(session.TypeBoundarySnapshot, session.BoundaryData{ID: "op", Snapshot: []byte(`{}`)})
+	snap, err := session.NewEvent(shared.SessionEventBoundarySnapshot, session.BoundaryData{ID: "op", Snapshot: []byte(`{}`)})
 	require.NoError(t, err)
 	_, err = s.Append(ctx, "s", 0, msg, snap)
 	require.ErrorIs(t, err, agentErrors.ErrLeaseLost)
@@ -158,15 +158,15 @@ func TestSessionLogResumeAcrossInstances(t *testing.T) {
 	var types []string
 	snapshots := 0
 	for _, ev := range events {
-		if ev.Type == session.TypeBoundarySnapshot {
+		if ev.Type == shared.SessionEventBoundarySnapshot {
 			snapshots++
 			continue
 		}
 		types = append(types, ev.Type)
 	}
 	require.Equal(t, []string{
-		session.TypeTurnStart, session.TypeToolDefinitions, session.TypeUserMessage, session.TypeAssistantMessage,
-		session.TypeToolResult, session.TypeAssistantMessage, session.TypeTurnEnd,
+		shared.SessionEventTurnStart, shared.SessionEventToolDefinitions, shared.SessionEventUserMessage, shared.SessionEventAssistantMessage,
+		shared.SessionEventToolResult, shared.SessionEventAssistantMessage, shared.SessionEventTurnEnd,
 	}, types)
 	require.Positive(t, snapshots)
 	msgs, err := session.DeriveMessages(events)

@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/kart-io/goagent/constants"
 	"github.com/kart-io/goagent/core/session"
 	agentErrors "github.com/kart-io/goagent/errors"
 )
@@ -75,7 +76,7 @@ func (s *SessionStore) writeTx(ctx context.Context, fn func(pgx.Tx) error) error
 func (s *SessionStore) fences(id string, events []session.Event) ([]*hold, error) {
 	var holds []*hold
 	for _, ev := range events {
-		if ev.Type != session.TypeBoundarySnapshot {
+		if ev.Type != constants.SessionEventBoundarySnapshot {
 			continue
 		}
 		var d session.BoundaryData

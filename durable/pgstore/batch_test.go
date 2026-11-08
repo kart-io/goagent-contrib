@@ -3,6 +3,7 @@ package pgstore
 import (
 	"context"
 	"encoding/json"
+	"github.com/kart-io/goagent/constants"
 	"os"
 	"testing"
 	"time"
@@ -160,7 +161,7 @@ func TestAppendAllSnapshotLeaseFencing(t *testing.T) {
 	takeover, err := b.Lock(ctx, "z", name)
 	require.NoError(t, err)
 	defer takeover()
-	snapshot, err := session.NewEvent(session.TypeBoundarySnapshot, session.BoundaryData{ID: "op", Snapshot: []byte(`{}`)})
+	snapshot, err := session.NewEvent(constants.SessionEventBoundarySnapshot, session.BoundaryData{ID: "op", Snapshot: []byte(`{}`)})
 	require.NoError(t, err)
 	_, err = a.AppendAll(ctx,
 		session.AppendBatch{ID: "a", Events: []session.Event{{Type: "test", Data: json.RawMessage(`{}`)}}},

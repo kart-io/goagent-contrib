@@ -1,0 +1,111 @@
+{
+  "检查时间": "2026-11-08T16:06:01.515469+08:00",
+  "受检提交": "2a237c7fb05d951a134b5af193f9f71262734026",
+  "生产代码提交": "3a029b9a7766fb66d67ab374f1aa740c089b5eed",
+  "本地及远端master": "634b5d8c242859e6842fa0e7d5aa4f32e2d35170",
+  "主线是分支祖先": true,
+  "结论": {
+    "约定首批范围代码合并": "通过",
+    "原主工作区直接合并": "需先保留并整合用户未提交修改",
+    "对外模块发布": "未就绪，须先发布当前pgstore并移除开发replace"
+  },
+  "本轮测试事件": {
+    "management": {
+      "github.com/kart-io/goagent-contrib/management/adapters": {
+        "pass": 7
+      },
+      "github.com/kart-io/goagent-contrib/management/httpapi": {
+        "pass": 3
+      },
+      "github.com/kart-io/goagent-contrib/management": {
+        "pass": 11
+      },
+      "github.com/kart-io/goagent-contrib/management/integration": {
+        "pass": 66
+      },
+      "github.com/kart-io/goagent-contrib/management/pgstore": {
+        "pass": 4
+      }
+    },
+    "harness": {
+      "github.com/kart-io/goagent-contrib/management/harness": {
+        "pass": 5
+      }
+    },
+    "migration": {
+      "github.com/kart-io/goagent-contrib/acp": {
+        "pass": 79
+      },
+      "github.com/kart-io/goagent-contrib/durable/pgstore": {
+        "pass": 77,
+        "skip": 2
+      }
+    },
+    "database-faults": {
+      "github.com/kart-io/goagent-contrib/durable/pgstore": {
+        "pass": 2
+      }
+    }
+  },
+  "说明": "测试事件包含父测试和子用例。migration首次跳过的2个专用数据库故障测试已在database-faults单独实际执行并通过；examples/host为无测试文件的包，使用已归档黑盒案例验证。",
+  "静态检查": {
+    "vet": "management、management/harness、acp、durable/pgstore全部通过",
+    "lint": "上述四模块golangci-lint v2.15.0全部0 issues"
+  },
+  "CI矩阵": {
+    "CI模块数": 13,
+    "发现模块数": 13,
+    "模块清单一致": true,
+    "新增覆盖": [
+      "management",
+      "management/harness"
+    ]
+  },
+  "CI文件SHA256": "5d8cfa896f6e7f26ce7b36ec5afa80301cdc50f956686609be42375fff13118a",
+  "用户工作区合并预演": [
+    {
+      "file": "acp/lifecycle_test.go",
+      "three_way_merge_exit": 0,
+      "conflicts": 0
+    },
+    {
+      "file": "acp/metadata_contract_test.go",
+      "three_way_merge_exit": 1,
+      "conflicts": 1
+    },
+    {
+      "file": "acp/replay_test.go",
+      "three_way_merge_exit": 0,
+      "conflicts": 0
+    },
+    {
+      "file": "acp/resource_contract_test.go",
+      "three_way_merge_exit": 1,
+      "conflicts": 1
+    },
+    {
+      "file": "durable/pgstore/batch_test.go",
+      "three_way_merge_exit": 0,
+      "conflicts": 0
+    },
+    {
+      "file": "durable/pgstore/session.go",
+      "three_way_merge_exit": 0,
+      "conflicts": 0
+    },
+    {
+      "file": "durable/pgstore/session_test.go",
+      "three_way_merge_exit": 0,
+      "conflicts": 0
+    }
+  ],
+  "既有案例证据": "case-test-summary.json，8组HTTP案例及27个进程并发测试事件；本轮未重复执行HTTP脚本，受检生产Go代码无变化",
+  "远端流水线": "未触发或用作验证依据",
+  "执行实际合并": false,
+  "复现": [
+    "env -u GOROOT GOTOOLCHAIN=go1.27.3 GOAGENT_PGSTORE_DSN=\"$GOAGENT_PGSTORE_DSN\" bash scripts/with-local-modules.sh bash -c 'cd management && go vet ./... && go test -race -count=1 -timeout 240s -json ./...'",
+    "env -u GOROOT GOTOOLCHAIN=go1.27.3 bash scripts/with-local-modules.sh bash -c 'cd management/harness && go vet ./... && go test -race -count=1 -json ./...'",
+    "env -u GOROOT GOTOOLCHAIN=go1.27.3 GOAGENT_PGSTORE_DSN=\"$GOAGENT_PGSTORE_DSN\" bash scripts/with-local-modules.sh bash -c 'cd acp && go vet ./... && go test -race -count=1 -timeout 240s -json ./... && cd ../durable/pgstore && go vet ./... && go test -race -count=1 -timeout 240s -json ./...'",
+    "env -u GOROOT GOTOOLCHAIN=go1.27.3 GOAGENT_PGSTORE_DSN=\"$GOAGENT_PGSTORE_DSN\" GOAGENT_PGSTORE_CONTAINER=\"$GOAGENT_PGSTORE_CONTAINER\" bash scripts/with-local-modules.sh bash -c 'cd durable/pgstore && go test -race -count=1 -timeout 240s -json -run \"^(TestPrimaryRestart|TestSyncCommit)$\" ./...'"
+  ]
+}

@@ -22,13 +22,15 @@ jobs:
           - document/pdf
           - durable/pgstore
           - httpagent
+          - management
+          - management/harness
           - retrieval
           - retrieval/cohere
           - retrieval/qdrant
           - retrieval/vertexai
           - tools/database
           - tools/practical
-    # 只有 pgstore 的测试会连接数据库，其余模块未设置 DSN 时不受影响
+    # pgstore 和 management 使用真实数据库；每个矩阵任务独享服务容器。
     services:
       postgres:
         image: postgres:17.6-alpine

@@ -244,7 +244,7 @@ func TestPrimaryRestart(t *testing.T) {
 	require.NoError(t, unlock())
 }
 
-// dropAfterCommit 在 armed 时把首个 COMMIT 写出后立即断开连接：服务端已提交，客户端只看到连接错误。
+// dropAfterCommit 在 armed 时把首个 COMMIT 写出后立即断开连接：服务端可能仍在提交，客户端只看到连接错误。
 type dropAfterCommit struct {
 	net.Conn
 	armed *atomic.Bool
@@ -252,7 +252,9 @@ type dropAfterCommit struct {
 
 func (c *dropAfterCommit) Write(b []byte) (int, error) {
 	n, err := c.Conn.Write(b)
-	if bytes.Contains(bytes.ToLower(b), []byte("commit")) && c.armed.CompareAndSwap(true, false) {
+	// pgx 的 COMMIT 使用 Simple Query（Q + 四字节长度 + 零结尾 SQL）。
+	// 必须匹配完整命令，不能把 BEGIN ISOLATION LEVEL READ COMMITTED 当作 COMMIT。
+	if len(b) >= 5 && b[0] == 'Q' && bytes.EqualFold(b[5:], []byte("commit\x00")) && c.armed.CompareAndSwap(true, false) {
 		_ = c.Conn.Close()
 	}
 	return n, err

@@ -62,8 +62,9 @@ func (s *SessionStore) Lock(ctx context.Context, id, name string) (func() error,
 }
 
 // writeTx 以同步提交执行写事务：事件中有持久快照，主备切换中丢失会让已完成的操作重跑。
+// READ COMMITTED 让行锁等待后的序号和令牌检查读取已提交版本，保持冲突错误与复制前缀语义。
 func (s *SessionStore) writeTx(ctx context.Context, fn func(pgx.Tx) error) error {
-	return pgx.BeginFunc(ctx, s.root.cfg.Pool, func(tx pgx.Tx) error {
+	return pgx.BeginTxFunc(ctx, s.root.cfg.Pool, pgx.TxOptions{IsoLevel: pgx.ReadCommitted}, func(tx pgx.Tx) error {
 		ms := fmt.Sprint(s.root.cfg.OpTimeout.Milliseconds())
 		if _, err := tx.Exec(ctx, `SELECT set_config('synchronous_commit', 'on', true), set_config('lock_timeout', $1, true), set_config('statement_timeout', $1, true)`, ms); err != nil {
 			return err

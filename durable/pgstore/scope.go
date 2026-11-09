@@ -43,7 +43,7 @@ func (c *scope) SaveAll(ctx context.Context, writes ...durable.Write) error {
 // 墓碑生效后数据即不可读、写入被拒；再分批删除快照与租约。中途失败时重复调用可续删。不等待进行中的持锁者。
 func (s *Store) RemoveScope(ctx context.Context, name string) error {
 	ns := scopeNS(name)
-	err := pgx.BeginFunc(ctx, s.cfg.Pool, func(tx pgx.Tx) error {
+	err := pgx.BeginTxFunc(ctx, s.cfg.Pool, pgx.TxOptions{IsoLevel: pgx.ReadCommitted}, func(tx pgx.Tx) error {
 		// 墓碑在主备切换中丢失会让已删除的作用域重新接受写入，须同步提交。
 		if _, err := tx.Exec(ctx, `SELECT set_config('synchronous_commit', 'on', true), pg_advisory_xact_lock(hashtextextended($1, 0))`, ns); err != nil {
 			return err
@@ -84,7 +84,7 @@ func (s *Store) PruneRemoved(ctx context.Context, olderThan time.Duration) error
 		return err
 	}
 	for _, ns := range expired {
-		err := pgx.BeginFunc(ctx, s.cfg.Pool, func(tx pgx.Tx) error {
+		err := pgx.BeginTxFunc(ctx, s.cfg.Pool, pgx.TxOptions{IsoLevel: pgx.ReadCommitted}, func(tx pgx.Tx) error {
 			if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, ns); err != nil {
 				return err
 			}

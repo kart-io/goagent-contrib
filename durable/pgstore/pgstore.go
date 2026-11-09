@@ -219,19 +219,29 @@ func (s *Store) acquire(ctx context.Context, ns, id string) (func() error, error
 		return nil, lockUnavailable(ctx)
 	}
 	for {
-		token := crand.Text()
-		ok, err := s.tryAcquire(ns, id, token)
-		if err != nil {
-			if !errors.Is(err, agentErrors.ErrScopeRemoved) {
-				// 提交结果不确定时租约可能已写入，按自己的令牌删除，避免留下无人持有的租约。
-				s.deleteLease(ns, id, token)
-			}
+		if ctx.Err() != nil {
 			s.leaveGate(k, g, true)
+			return nil, lockUnavailable(ctx)
+		}
+		token := crand.Text()
+		ok, err := s.tryAcquire(ctx, ns, id, token)
+		if err != nil {
+			s.leaveGate(k, g, true)
+			if ctx.Err() != nil {
+				return nil, lockUnavailable(ctx)
+			}
 			return nil, err
 		}
 		if ok {
 			h := &hold{ns: ns, id: id, token: token, renew: true}
 			s.mu.Lock()
+			if ctx.Err() != nil {
+				s.mu.Unlock()
+				// 已提交但尚未交给调用方，按自身 token 清理，不能登记为活跃持有者。
+				s.deleteLease(ns, id, token)
+				s.leaveGate(k, g, true)
+				return nil, lockUnavailable(ctx)
+			}
 			s.owners[k] = h
 			s.mu.Unlock()
 			return s.unlocker(k, g, h), nil
@@ -246,9 +256,10 @@ func (s *Store) acquire(ctx context.Context, ns, id string) (func() error, error
 	}
 }
 
-// tryAcquire 使用内部超时而非调用方 ctx，避免调用方取消导致提交结果不确定。
-func (s *Store) tryAcquire(ns, id, token string) (bool, error) {
-	ctx, cancel := s.opContext()
+// tryAcquire 的等待与写入响应调用方取消，同时受 OpTimeout 限制。
+// 一旦尝试写入，错误可能意味着 INSERT/COMMIT 结果不确定，须用独立期限补偿。
+func (s *Store) tryAcquire(caller context.Context, ns, id, token string) (bool, error) {
+	ctx, cancel := context.WithTimeout(caller, s.cfg.OpTimeout)
 	defer cancel()
 	var removed, busy bool
 	err := s.cfg.Pool.QueryRow(ctx, `SELECT
@@ -264,11 +275,17 @@ func (s *Store) tryAcquire(ns, id, token string) (bool, error) {
 		return false, nil
 	}
 	acquired := false
-	err = pgx.BeginFunc(ctx, s.cfg.Pool, func(tx pgx.Tx) error {
+	writeAttempted := false
+	err = pgx.BeginTxFunc(ctx, s.cfg.Pool, pgx.TxOptions{IsoLevel: pgx.ReadCommitted}, func(tx pgx.Tx) error {
 		if err := checkScope(ctx, tx, ns); err != nil {
 			return err
 		}
+		// 顺序固定为 scope 锁 -> lease 锁 -> 行锁；清理租约不再取 scope 锁。
+		if err := lockLease(ctx, tx, ns, id); err != nil {
+			return err
+		}
 		var got string
+		writeAttempted = true
 		err := tx.QueryRow(ctx, `INSERT INTO goagent_durable_lease (ns, id, token, owner, expires_at)
 VALUES ($1, $2, $3, $4, now() + $5 * interval '1 millisecond')
 ON CONFLICT (ns, id) DO UPDATE SET token = EXCLUDED.token, owner = EXCLUDED.owner, expires_at = EXCLUDED.expires_at
@@ -280,6 +297,10 @@ RETURNING token`, ns, id, token, s.cfg.Owner, s.cfg.LeaseTTL.Milliseconds()).Sca
 		acquired = err == nil
 		return err
 	})
+	if err != nil && writeAttempted {
+		// 事务结束后再清理；取消不能取消补偿，lease 锁保证看见原事务的最终结果。
+		s.deleteLease(ns, id, token)
+	}
 	return acquired, err
 }
 
@@ -300,10 +321,26 @@ func checkScope(ctx context.Context, tx pgx.Tx, ns string) error {
 	return err
 }
 
+// lockLease 串行化同一 (ns, id) 的获取与清理，持有到事务提交或回滚。
+// 双 int 键与 scope 使用的单 bigint 键属于不同锁空间，避免锁别名引入死锁。
+// 哈希碰撞只会额外串行化；实际读写仍使用完整的 ns、id 与 token。
+func lockLease(ctx context.Context, tx pgx.Tx, ns, id string) error {
+	_, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))`, ns, id)
+	return err
+}
+
 func (s *Store) deleteLease(ns, id, token string) {
 	ctx, cancel := s.opContext()
 	defer cancel()
-	_, err := s.cfg.Pool.Exec(ctx, `DELETE FROM goagent_durable_lease WHERE ns = $1 AND id = $2 AND token = $3`, ns, id, token)
+	err := pgx.BeginTxFunc(ctx, s.cfg.Pool, pgx.TxOptions{IsoLevel: pgx.ReadCommitted}, func(tx pgx.Tx) error {
+		if err := lockLease(ctx, tx, ns, id); err != nil {
+			return err
+		}
+		// 必须在获锁后的独立语句中 DELETE：新快照才能看到等待期间提交的租约。
+		// token 限制保证不误删已接管的持有者；不检查 scope，墓碑不能阻止清理。
+		_, err := tx.Exec(ctx, `DELETE FROM goagent_durable_lease WHERE ns = $1 AND id = $2 AND token = $3`, ns, id, token)
+		return err
+	})
 	s.report("delete_lease", err)
 }
 
@@ -378,7 +415,8 @@ func (s *Store) saveAll(ctx context.Context, ns string, writes []durable.Write) 
 		rows[i] = row{id: write.ID, token: h.token, data: data}
 	}
 	slices.SortFunc(rows, func(a, b row) int { return strings.Compare(a.id, b.id) })
-	return pgx.BeginFunc(ctx, s.cfg.Pool, func(tx pgx.Tx) error {
+	// 获得 scope 锁后须读取新快照，不能继承连接的 REPEATABLE READ 默认值。
+	return pgx.BeginTxFunc(ctx, s.cfg.Pool, pgx.TxOptions{IsoLevel: pgx.ReadCommitted}, func(tx pgx.Tx) error {
 		ms := fmt.Sprint(s.cfg.OpTimeout.Milliseconds())
 		if _, err := tx.Exec(ctx, `SELECT set_config('synchronous_commit', 'on', true), set_config('lock_timeout', $1, true), set_config('statement_timeout', $1, true)`, ms); err != nil {
 			return err

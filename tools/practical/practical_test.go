@@ -664,32 +664,6 @@ func TestAPICallerTool_Authentication_Bearer(t *testing.T) {
 	}
 }
 
-// TestNewAPICallerRuntimeTool 测试创建 API 调用运行时工具
-func TestNewAPICallerRuntimeTool(t *testing.T) {
-	tool := NewAPICallerRuntimeTool()
-
-	if tool == nil {
-		t.Fatal("Expected non-nil tool")
-	}
-
-	if tool.APICallerTool == nil {
-		t.Error("Expected APICallerTool to be initialized")
-	}
-}
-
-// TestNewFileOperationsRuntimeTool 测试创建文件操作运行时工具
-func TestNewFileOperationsRuntimeTool(t *testing.T) {
-	tool := NewFileOperationsRuntimeTool("/tmp")
-
-	if tool == nil {
-		t.Fatal("Expected non-nil tool")
-	}
-
-	if tool.FileOperationsTool == nil {
-		t.Error("Expected FileOperationsTool to be initialized")
-	}
-}
-
 // Database Query Tool Tests
 // 数据库查询工具测试
 

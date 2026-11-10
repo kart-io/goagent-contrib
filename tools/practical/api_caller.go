@@ -12,7 +12,6 @@ import (
 	agentcore "github.com/kart-io/goagent/core"
 	agentErrors "github.com/kart-io/goagent/errors"
 	"github.com/kart-io/goagent/interfaces"
-	"github.com/kart-io/goagent/tools"
 	"github.com/kart-io/goagent/utils/httpclient"
 )
 
@@ -159,7 +158,7 @@ func (t *APICallerTool) Execute(ctx context.Context, input *interfaces.ToolInput
 	return t.execute(ctx, params)
 }
 
-// execute 按已解析的参数执行调用，供 ExecuteWithRuntime 在注入凭据后复用
+// execute 按已解析的参数执行调用。
 func (t *APICallerTool) execute(ctx context.Context, params *apiParams) (*interfaces.ToolOutput, error) {
 	// Check rate limit
 	if !t.rateLimiter.Allow() {
@@ -663,79 +662,4 @@ func min(a, b int) int {
 		return a
 	}
 	return b
-}
-
-// APICallerRuntimeTool extends APICallerTool with runtime support
-type APICallerRuntimeTool struct {
-	*APICallerTool
-}
-
-// NewAPICallerRuntimeTool creates a runtime-aware API caller
-func NewAPICallerRuntimeTool() *APICallerRuntimeTool {
-	return &APICallerRuntimeTool{
-		APICallerTool: NewAPICallerTool(),
-	}
-}
-
-// ExecuteWithRuntime executes with runtime support
-func (t *APICallerRuntimeTool) ExecuteWithRuntime(ctx context.Context, input *interfaces.ToolInput, runtime *tools.ToolRuntime) (*interfaces.ToolOutput, error) {
-	// Stream status
-	if runtime != nil && runtime.StreamWriter != nil {
-		if err := runtime.StreamWriter(map[string]interface{}{
-			"status": "calling_api",
-			"tool":   t.Name(),
-		}); err != nil {
-			return nil, agentErrors.Wrap(err, agentErrors.CodeToolExecution, "failed to stream status").
-				WithComponent("api_caller_tool").
-				WithOperation("executeWithRuntime")
-		}
-	}
-
-	var result *interfaces.ToolOutput
-	params, err := t.parseAPIInput(input.Args)
-	if err != nil {
-		err = agentErrors.Wrap(err, agentErrors.CodeInvalidInput, "invalid input").
-			WithComponent("api_caller_tool").
-			WithOperation("executeWithRuntime")
-	} else {
-		// Get stored API keys from runtime
-		if runtime != nil && params.Auth != nil && params.Auth.Type == "api_key" {
-			// Try to get API key from runtime state
-			if key, err := runtime.GetState("api_key_" + params.URL); err == nil {
-				if params.Auth.Credentials == nil {
-					params.Auth.Credentials = make(map[string]interface{})
-				}
-				params.Auth.Credentials["key"] = key
-			}
-		}
-
-		// Execute the API call
-		result, err = t.execute(ctx, params)
-	}
-
-	// Store successful results in runtime
-	if err == nil && runtime != nil {
-		// Store last successful response
-		if err := runtime.PutToStore([]string{"api_responses"}, params.URL, result); err != nil {
-			return nil, agentErrors.Wrap(err, agentErrors.CodeToolExecution, "failed to put to store").
-				WithComponent("api_caller_tool").
-				WithOperation("executeWithRuntime").
-				WithContext("url", agentErrors.RedactURL(params.URL))
-		}
-	}
-
-	// Stream completion
-	if runtime != nil && runtime.StreamWriter != nil {
-		if err := runtime.StreamWriter(map[string]interface{}{
-			"status": "completed",
-			"tool":   t.Name(),
-			"error":  err,
-		}); err != nil {
-			return nil, agentErrors.Wrap(err, agentErrors.CodeToolExecution, "failed to stream completion").
-				WithComponent("api_caller_tool").
-				WithOperation("executeWithRuntime")
-		}
-	}
-
-	return result, err
 }

@@ -2,13 +2,11 @@ package practical
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/kart-io/goagent/codec/json"
 	agentcore "github.com/kart-io/goagent/core"
 	agentErrors "github.com/kart-io/goagent/errors"
 	"github.com/kart-io/goagent/interfaces"
-	"github.com/kart-io/goagent/tools"
 )
 
 // FileOperationsTool 保留用于向后兼容，内部委托给专门的工具
@@ -256,67 +254,4 @@ func (t *FileOperationsTool) validatePath(path string) error {
 		ForbiddenPaths: t.forbiddenPaths,
 	}
 	return validatePath(config, path)
-}
-
-// FileOperationsRuntimeTool 扩展 FileOperationsTool 以支持运行时
-type FileOperationsRuntimeTool struct {
-	*FileOperationsTool
-}
-
-// NewFileOperationsRuntimeTool 创建支持运行时的文件操作工具
-func NewFileOperationsRuntimeTool(basePath string) *FileOperationsRuntimeTool {
-	return &FileOperationsRuntimeTool{
-		FileOperationsTool: NewFileOperationsTool(basePath),
-	}
-}
-
-// ExecuteWithRuntime 使用运行时支持执行
-func (t *FileOperationsRuntimeTool) ExecuteWithRuntime(ctx context.Context, input *interfaces.ToolInput, runtime *tools.ToolRuntime) (*interfaces.ToolOutput, error) {
-	// 流式输出状态
-	if runtime != nil && runtime.StreamWriter != nil {
-		if err := runtime.StreamWriter(map[string]interface{}{
-			"status": "performing_file_operation",
-			"tool":   t.Name(),
-		}); err != nil {
-			return nil, agentErrors.Wrap(err, agentErrors.CodeToolExecution, "failed to stream status").
-				WithComponent("file_operations_tool").
-				WithOperation("executeWithRuntime")
-		}
-	}
-
-	// 执行操作
-	result, err := t.Execute(ctx, input)
-
-	// 将文件操作存储到运行时进行审计
-	if runtime != nil {
-		params, _ := t.parseFileInput(input.Args)
-		if params != nil {
-			// 存储操作日志
-			if err := runtime.PutToStore([]string{"file_operations"}, fmt.Sprintf("%d", ctx.Value("timestamp")), map[string]interface{}{
-				"operation": params.Operation,
-				"path":      params.Path,
-				"success":   err == nil,
-				"error":     err,
-			}); err != nil {
-				return nil, agentErrors.Wrap(err, agentErrors.CodeToolExecution, "failed to store operation log").
-					WithComponent("file_operations_tool").
-					WithOperation("executeWithRuntime")
-			}
-		}
-	}
-
-	// 流式输出完成状态
-	if runtime != nil && runtime.StreamWriter != nil {
-		if err := runtime.StreamWriter(map[string]interface{}{
-			"status": "completed",
-			"tool":   t.Name(),
-			"error":  err,
-		}); err != nil {
-			return nil, agentErrors.Wrap(err, agentErrors.CodeToolExecution, "failed to stream completion").
-				WithComponent("file_operations_tool").
-				WithOperation("executeWithRuntime")
-		}
-	}
-
-	return result, err
 }

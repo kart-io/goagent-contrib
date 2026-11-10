@@ -3,7 +3,6 @@ package database
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -16,7 +15,6 @@ import (
 	agentcore "github.com/kart-io/goagent/core"
 	agentErrors "github.com/kart-io/goagent/errors"
 	"github.com/kart-io/goagent/interfaces"
-	"github.com/kart-io/goagent/tools"
 )
 
 // sanitizeQuery performs SQL query sanitization checks.
@@ -646,74 +644,4 @@ type connectionConfig struct {
 type transactionStep struct {
 	Query  string        `json:"query"`
 	Params []interface{} `json:"params"`
-}
-
-// DatabaseQueryRuntimeTool extends DatabaseQueryTool with runtime support
-type DatabaseQueryRuntimeTool struct {
-	*DatabaseQueryTool
-}
-
-// NewDatabaseQueryRuntimeTool creates a runtime-aware database query tool
-func NewDatabaseQueryRuntimeTool() *DatabaseQueryRuntimeTool {
-	return &DatabaseQueryRuntimeTool{
-		DatabaseQueryTool: NewDatabaseQueryTool(),
-	}
-}
-
-// ExecuteWithRuntime executes with runtime support
-func (t *DatabaseQueryRuntimeTool) ExecuteWithRuntime(ctx context.Context, input *interfaces.ToolInput, runtime *tools.ToolRuntime) (*interfaces.ToolOutput, error) {
-	// Stream status
-	if runtime != nil && runtime.StreamWriter != nil {
-		if err := runtime.StreamWriter(map[string]interface{}{
-			"status": "executing_query",
-			"tool":   t.Name(),
-		}); err != nil {
-			return nil, agentErrors.Wrap(err, agentErrors.CodeToolExecution, "failed to stream status").
-				WithComponent("database_query_tool").
-				WithOperation("executeWithRuntime")
-		}
-	}
-
-	// Get connection details from runtime if needed
-	if runtime != nil {
-		params, _ := t.parseDBInput(input.Args)
-		if params != nil && params.Connection.DSN == "" {
-			// Try to get DSN from runtime state
-			key := fmt.Sprintf("db_%s_dsn", params.Connection.Driver)
-			if dsn, err := runtime.GetState(key); err == nil {
-				params.Connection.DSN = dsn.(string)
-			}
-		}
-	}
-
-	// Execute the query
-	result, err := t.Execute(ctx, input)
-
-	// Store query results in runtime for analysis
-	if err == nil && runtime != nil {
-		params, _ := t.parseDBInput(input.Args)
-		if params != nil && params.Operation == "query" {
-			// Store recent query results
-			if err := runtime.PutToStore([]string{"query_results"}, time.Now().Format(time.RFC3339), result); err != nil {
-				return nil, agentErrors.Wrap(err, agentErrors.CodeToolExecution, "failed to put to store").
-					WithComponent("database_query_tool").
-					WithOperation("executeWithRuntime")
-			}
-		}
-	}
-
-	// Stream completion
-	if runtime != nil && runtime.StreamWriter != nil {
-		if err := runtime.StreamWriter(map[string]interface{}{
-			"status": "completed",
-			"tool":   t.Name(),
-			"error":  err,
-		}); err != nil {
-			return nil, agentErrors.Wrap(err, agentErrors.CodeToolExecution, "failed to stream completion").
-				WithComponent("database_query_tool").
-				WithOperation("executeWithRuntime")
-		}
-	}
-
-	return result, err
 }

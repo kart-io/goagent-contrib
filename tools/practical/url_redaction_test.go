@@ -3,17 +3,12 @@ package practical
 import (
 	"context"
 	"errors"
-	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/kart-io/goagent/core/state"
 	"github.com/kart-io/goagent/interfaces"
-	"github.com/kart-io/goagent/store/memory"
-	"github.com/kart-io/goagent/tools"
 	"github.com/kart-io/goagent/utils/httpclient"
 )
 
@@ -43,31 +38,6 @@ func TestAPICallerTool_TransportErrorRedactsQueryKey(t *testing.T) {
 	var ue *url.Error
 	if !errors.As(err, &ue) {
 		t.Error("应仍可取到 *url.Error")
-	}
-}
-
-// ExecuteWithRuntime 从 runtime state 读取的 api key 必须真正用于请求。
-func TestAPICallerRuntimeTool_InjectsAPIKeyFromState(t *testing.T) {
-	var gotKey string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotKey = r.Header.Get("X-API-Key")
-		_, _ = w.Write([]byte(`{}`))
-	}))
-	defer server.Close()
-
-	st := state.NewAgentState()
-	st.Set("api_key_"+server.URL, "FROM_STATE")
-	rt := tools.NewToolRuntime(context.Background(), st, memory.New())
-
-	input := &interfaces.ToolInput{Args: map[string]interface{}{
-		"url":  server.URL,
-		"auth": map[string]interface{}{"type": "api_key"},
-	}}
-	if _, err := NewAPICallerRuntimeTool().ExecuteWithRuntime(context.Background(), input, rt); err != nil {
-		t.Fatalf("执行失败: %v", err)
-	}
-	if gotKey != "FROM_STATE" {
-		t.Errorf("服务端收到的 key = %q, want FROM_STATE", gotKey)
 	}
 }
 

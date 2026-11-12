@@ -32,6 +32,15 @@ CREATE TABLE goagent_durable_scope (
 );
 `
 
+// SnapshotCompressionLZ4 把快照列的 TOAST 压缩改为 lz4：大快照（如长期记忆的基础快照）写入时 CPU 开销远低于默认的 pglz，
+// 同表中可压缩的 JSON 快照仍然压缩。需要 PostgreSQL 14+ 且服务端支持 lz4，否则语句报错、表不变。
+// 只改元数据、不重写表，已有的值保持原压缩方式直到被改写；新旧二进制都能读写，因此不升级 SchemaVersion。
+// 由宿主纳入迁移流程，执行时建议设置 lock_timeout；回滚执行 SnapshotCompressionPGLZ。
+const SnapshotCompressionLZ4 = `ALTER TABLE goagent_durable_snapshot ALTER COLUMN data SET COMPRESSION lz4`
+
+// SnapshotCompressionPGLZ 恢复默认的 pglz 压缩（SnapshotCompressionLZ4 的回滚），同样只影响之后写入的值。
+const SnapshotCompressionPGLZ = `ALTER TABLE goagent_durable_snapshot ALTER COLUMN data SET COMPRESSION pglz`
+
 // SessionSchemaVersion 是会话日志表结构的版本，NewSessionStore 会校验。
 const SessionSchemaVersion = 1
 

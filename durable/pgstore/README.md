@@ -15,3 +15,13 @@ Lock 的获取尝试同时受调用方 context 和 `OpTimeout` 限制，连接�
 回归测试使用隔离 schema 与真实事务，观察 `pg_locks` / `pg_blocking_pids` 确认清理在获取事务结束前阻塞，并验证提交、回滚、其他 token、默认 REPEATABLE READ、获取端锁协议及 scope 锁顺序。`TestAcquireUncertainCommitCleanup` 继续覆盖 COMMIT 发出后断开连接的故障。上述测试不重启数据库、不改全局同步复制配置。
 
 `TestLockCancellationDuringAdvisoryWait` 覆盖公开 Lock 的真实 scope/lease 等待、取消及截止时间，确认在阻塞事务释放前返回并且 owners/gates/lease 无残留。`TestLockCancelledAfterCommit` 覆盖收到提交成功和丢失提交响应后的取消及独立补偿。`TestSaveRejectsTombstoneAfterScopeWait`、`TestScopeMaintenanceAfterConcurrentTransaction`、`TestSessionWritesAfterRowWait` 用 RC/RR 默认值对照，验证等锁期间提交后的墓碑拒写、重复删除/回收及会话行锁语义。
+
+# 快照列的压缩方式（可选调优）
+
+`goagent_durable_snapshot.data` 默认用 PostgreSQL 的 pglz 做 TOAST 压缩。写入已经压缩过的大快照（例如长期记忆的基础快照）时，pglz 的 CPU 开销大、收益小。`SnapshotCompressionLZ4` 把该列改为 lz4：同表中可压缩的 JSON 快照仍然压缩，大快照写入明显更快（长期记忆 5k 条记录时的 Save 实测：pglz 73～109ms，lz4 34～39ms）。
+
+- 前提：PostgreSQL 14+，服务端支持 lz4。不满足时语句报错，表不变。
+- 影响：只改元数据，不重写表。已有的值保持原压缩方式，直到被改写。新旧二进制都能读写，因此不升级 `SchemaVersion`。
+- 执行：由宿主纳入迁移流程，执行前设置 `lock_timeout`，避免排在长事务之后阻塞业务。
+- 回滚：执行 `SnapshotCompressionPGLZ`，同样只影响之后写入的值。
+- 验证：`TestSnapshotCompressionTuning` 覆盖迁移前、迁移后、回滚后三种值的读写。

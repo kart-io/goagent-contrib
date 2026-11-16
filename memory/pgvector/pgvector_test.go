@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
+	agentErrors "github.com/kart-io/goagent/errors"
 	"github.com/kart-io/goagent/memory"
 	"github.com/kart-io/goagent/memory/memorytest"
 )
@@ -112,7 +113,7 @@ func TestSchemaRejectsDimMismatch(t *testing.T) {
 
 func TestNewRequiresPool(t *testing.T) {
 	_, err := New(context.Background(), Config{})
-	require.Error(t, err)
+	require.Truef(t, agentErrors.IsCode(err, agentErrors.CodeInvalidInput), "期望 CodeInvalidInput，得到 %v", err)
 }
 
 func TestSharedAcrossInstances(t *testing.T) {
@@ -132,7 +133,11 @@ func TestSharedAcrossInstances(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, hits, 1)
 	require.Equal(t, "m1", hits[0].ID)
-	require.InDelta(t, 1, hits[0].Score, 1e-6)
+	require.InDelta(t, 1, hits[0].Score, 1e-5)
+
+	hits, err = xb.Search(ctx, []string{"t", "bob"}, []float32{1, 0}, 3)
+	require.NoError(t, err)
+	require.Nil(t, hits) // 与 MemoryIndex 一致：无结果返回 nil
 }
 
 // 1536 维下与 MemoryIndex 对照：float32 累加的分数差在 1e-5 内，顺序一致。

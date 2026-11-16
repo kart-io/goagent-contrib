@@ -22,6 +22,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	pgv "github.com/pgvector/pgvector-go"
 
+	agentErrors "github.com/kart-io/goagent/errors"
 	"github.com/kart-io/goagent/memory"
 )
 
@@ -41,7 +42,7 @@ var _ memory.Index = (*Index)(nil)
 // New 检查 vector 扩展已安装且表结构版本为 SchemaVersion。
 func New(ctx context.Context, cfg Config) (*Index, error) {
 	if cfg.Pool == nil {
-		return nil, errors.New("pgvector 需要 Pool")
+		return nil, agentErrors.New(agentErrors.CodeInvalidInput, "pgvector 需要 Pool")
 	}
 	var installed bool
 	if err := cfg.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector')`).Scan(&installed); err != nil {
@@ -122,6 +123,9 @@ WHERE ns = $1 AND dim = $2 ORDER BY vec <=> $3, id COLLATE "C" LIMIT $4`,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("读取检索结果失败：%w", err)
+	}
+	if len(hits) == 0 {
+		return nil, nil // 与 MemoryIndex 一致
 	}
 	return hits, nil
 }

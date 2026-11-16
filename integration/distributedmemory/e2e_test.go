@@ -225,6 +225,7 @@ func TestForgetErasesOtherInstanceCache(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, n, "Forget 返回后，带该命名空间标签的条目应已从 Redis 物理删除")
 
+	// 记忆已删，提示词变了，即使擦除失效这里也会未命中；区分擦除是否到达的是上面的 EXISTS 断言。
 	beta.ask(t, chat, ns, "我喜欢喝什么？")
 	require.Equal(t, 2, chat.Calls(), "乙再次调用不应命中，回到模型")
 }

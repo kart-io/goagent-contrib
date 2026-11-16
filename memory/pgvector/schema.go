@@ -14,6 +14,7 @@ CREATE TABLE goagent_memory_vectors (
   id  text   NOT NULL,
   dim int    NOT NULL,
   vec vector NOT NULL,
-  PRIMARY KEY (ns, id)
+  PRIMARY KEY (ns, id),
+  CHECK (vector_dims(vec) = dim)
 );
 `

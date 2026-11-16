@@ -98,6 +98,18 @@ func TestSchemaVersionMismatch(t *testing.T) {
 	require.ErrorContains(t, err, "表结构版本")
 }
 
+// 表结构约束 dim 与向量实际维度一致：绕过 Upsert 直接写入不一致的行会被拒绝，Search 的 dim 过滤因此可信。
+func TestSchemaRejectsDimMismatch(t *testing.T) {
+	pool := newPool(t, newDatabase(t, true))
+	ctx := context.Background()
+	_, err := pool.Exec(ctx, Schema)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `INSERT INTO goagent_memory_vectors (ns, id, dim, vec) VALUES ('{t}', 'a', 3, '[1,0,0]')`)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `INSERT INTO goagent_memory_vectors (ns, id, dim, vec) VALUES ('{t}', 'b', 2, '[1,0,0]')`)
+	require.ErrorContains(t, err, "check constraint")
+}
+
 func TestNewRequiresPool(t *testing.T) {
 	_, err := New(context.Background(), Config{})
 	require.Error(t, err)

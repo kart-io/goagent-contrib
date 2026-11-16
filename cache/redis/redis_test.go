@@ -176,7 +176,7 @@ func TestNewWarnings(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			client := testClient(t)
-			setPolicy(t, client, tc.policy)
+			policyAddr := setPolicy(t, client, tc.policy)
 			var buf bytes.Buffer
 			old := slog.Default()
 			slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
@@ -194,30 +194,32 @@ func TestNewWarnings(t *testing.T) {
 			}
 			require.Contains(t, buf.String(), "level=WARN")
 			require.Contains(t, buf.String(), tc.want)
+			if tc.policy != "noeviction" {
+				require.Contains(t, buf.String(), "addr="+policyAddr)
+			}
 		})
 	}
 }
 
-// setPolicy 在全部主节点上设置 maxmemory-policy，测试结束时恢复原值。
-func setPolicy(t *testing.T, client goredis.UniversalClient, policy string) {
+// setPolicy 只在地址最小的一个主节点上设置 maxmemory-policy 并返回其地址，测试结束时恢复原值。
+// Cluster 下只改一个主节点，用来发现只检查随机一个节点的实现。
+func setPolicy(t *testing.T, client goredis.UniversalClient, policy string) string {
 	t.Helper()
 	var mu sync.Mutex
-	old := map[string]string{}
-	require.NoError(t, forEachMaster(opCtx(t), client, func(ctx context.Context, node *goredis.Client) error {
-		cur, err := node.ConfigGet(ctx, "maxmemory-policy").Result()
-		if err != nil {
-			return err
-		}
+	var target *goredis.Client
+	require.NoError(t, forEachMaster(opCtx(t), client, func(_ context.Context, node *goredis.Client) error {
 		mu.Lock()
-		old[node.Options().Addr] = cur["maxmemory-policy"]
-		mu.Unlock()
-		return node.ConfigSet(ctx, "maxmemory-policy", policy).Err()
+		defer mu.Unlock()
+		if target == nil || node.Options().Addr < target.Options().Addr {
+			target = node
+		}
+		return nil
 	}))
-	t.Cleanup(func() {
-		_ = forEachMaster(context.Background(), client, func(ctx context.Context, node *goredis.Client) error {
-			return node.ConfigSet(ctx, "maxmemory-policy", old[node.Options().Addr]).Err()
-		})
-	})
+	cur, err := target.ConfigGet(opCtx(t), "maxmemory-policy").Result()
+	require.NoError(t, err)
+	require.NoError(t, target.ConfigSet(opCtx(t), "maxmemory-policy", policy).Err())
+	t.Cleanup(func() { _ = target.ConfigSet(context.Background(), "maxmemory-policy", cur["maxmemory-policy"]).Err() })
+	return target.Options().Addr
 }
 
 func TestNewRejectsInvalidConfig(t *testing.T) {

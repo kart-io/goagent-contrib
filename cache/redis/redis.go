@@ -141,15 +141,28 @@ func requireMaster(ctx context.Context, client goredis.UniversalClient) error {
 }
 
 // warnEviction 在淘汰策略不是 noeviction 时告警：标签成员集合可能被淘汰，DeleteTag 只能靠 TTL 物理删除对应条目。
-// CONFIG 被禁用（托管服务常见）时静默跳过。
+// Cluster 逐个主节点检查（keyless 命令只会打到一个随机节点）；CONFIG 被禁用（托管服务常见）时静默跳过。
 func warnEviction(ctx context.Context, client goredis.UniversalClient) {
-	cfg, err := client.ConfigGet(ctx, "maxmemory-policy").Result()
-	if err != nil {
-		return
+	check := func(ctx context.Context, node goredis.UniversalClient, addr string) {
+		cfg, err := node.ConfigGet(ctx, "maxmemory-policy").Result()
+		if err != nil {
+			return
+		}
+		if policy, ok := cfg["maxmemory-policy"]; ok && policy != "noeviction" {
+			slog.Warn("cache/redis 所在 Redis 的淘汰策略不是 noeviction，标签成员集合被淘汰时 DeleteTag 只能依靠 TTL 物理删除条目",
+				"addr", addr, "maxmemory-policy", policy)
+		}
 	}
-	if policy, ok := cfg["maxmemory-policy"]; ok && policy != "noeviction" {
-		slog.Warn("cache/redis 所在 Redis 的淘汰策略不是 noeviction，标签成员集合被淘汰时 DeleteTag 只能依靠 TTL 物理删除条目",
-			"maxmemory-policy", policy)
+	switch c := client.(type) {
+	case *goredis.ClusterClient:
+		_ = c.ForEachMaster(ctx, func(ctx context.Context, node *goredis.Client) error {
+			check(ctx, node, node.Options().Addr)
+			return nil
+		})
+	case *goredis.Client:
+		check(ctx, c, c.Options().Addr)
+	default:
+		check(ctx, client, "")
 	}
 }
 

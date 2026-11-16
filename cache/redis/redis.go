@@ -16,6 +16,7 @@ package redis
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -23,6 +24,7 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 
 	"github.com/kart-io/goagent/cache"
+	agentErrors "github.com/kart-io/goagent/errors"
 )
 
 const (
@@ -40,7 +42,8 @@ type Config struct {
 	Prefix string
 	// DeleteBatch 是 DeleteTag 每批扫描的成员数，默认 500。
 	DeleteBatch int
-	// WaitReplicas 大于 0 时，DeleteTag 删除令牌后等待这么多从节点确认。默认 0。
+	// WaitReplicas 大于 0 时，DeleteTag 删除令牌后等待这么多从节点确认，不足则返回错误。默认 0。
+	// 它缩小而不消除主从切换让已删除条目重新可读的窗口：被提升的从节点不一定是确认过的那些。
 	WaitReplicas int
 	// WaitTimeout 是等待从节点确认的时限，默认 1 秒。
 	WaitTimeout time.Duration
@@ -56,19 +59,17 @@ var (
 	_ cache.Tagged = (*Cache)(nil)
 )
 
-// New 校验配置与服务端版本后返回 Cache；不关闭 Client，由调用方负责。
+// New 校验配置、服务端版本与"令牌读写都到主节点"的前提后返回 Cache；不关闭 Client，由调用方负责。
+// 配置错误返回 CodeInvalidInput。
 func New(ctx context.Context, cfg Config) (*Cache, error) {
-	if cfg.Client == nil {
-		return nil, fmt.Errorf("cache/redis 需要 Client")
-	}
-	if _, ok := cfg.Client.(*goredis.Ring); ok {
-		return nil, fmt.Errorf("cache/redis 不支持 Ring 客户端：客户端分片在主从切换与迁槽时语义不同")
-	}
-	if cfg.DeleteBatch < 0 || cfg.WaitReplicas < 0 || cfg.WaitTimeout < 0 {
-		return nil, fmt.Errorf("cache/redis 配置无效：DeleteBatch、WaitReplicas、WaitTimeout 不能为负")
+	if err := validateConfig(cfg); err != nil {
+		return nil, err
 	}
 	if cfg.Prefix == "" {
 		cfg.Prefix = defaultPrefix
+	}
+	if strings.ContainsAny(cfg.Prefix, "{}") {
+		slog.Warn("cache/redis 的 Prefix 含花括号，Cluster 下全部数据会落到同一个槽", "prefix", cfg.Prefix)
 	}
 	if cfg.DeleteBatch == 0 {
 		cfg.DeleteBatch = defaultDeleteBatch
@@ -90,7 +91,66 @@ func New(ctx context.Context, cfg Config) (*Cache, error) {
 	if major < minRedisMajor {
 		return nil, fmt.Errorf("cache/redis 需要 Redis %d 及以上，服务端主版本为 %d", minRedisMajor, major)
 	}
+	// Cluster 客户端只把命令路由到主节点（ReadOnly 等选项已在上面拒绝），不逐个检查。
+	if _, ok := cfg.Client.(*goredis.ClusterClient); !ok {
+		if err := requireMaster(ctx, cfg.Client); err != nil {
+			return nil, err
+		}
+	}
+	warnEviction(ctx, cfg.Client)
 	return &Cache{cfg: cfg}, nil
+}
+
+// validateConfig 检查不需要访问服务端的配置项。
+// 哨兵客户端的 RouteByLatency/RouteRandomly 在 NewFailoverClient 中直接 panic，NewFailoverClusterClient 把它们
+// 与 ReplicaOnly（映射为 ReadOnly）放进 ClusterOptions，在这里拒绝；NewFailoverClient 的 ReplicaOnly 连到从节点，由 ROLE 检查拒绝。
+func validateConfig(cfg Config) error {
+	switch client := cfg.Client.(type) {
+	case nil:
+		return agentErrors.New(agentErrors.CodeInvalidInput, "cache/redis 需要 Client")
+	case *goredis.Ring:
+		return agentErrors.New(agentErrors.CodeInvalidInput, "cache/redis 不支持 Ring 客户端：客户端分片在主从切换与迁槽时语义不同")
+	case *goredis.ClusterClient:
+		opt := client.Options()
+		if opt.ReadOnly || opt.RouteByLatency || opt.RouteRandomly {
+			return agentErrors.New(agentErrors.CodeInvalidInput,
+				"cache/redis 不支持 ReadOnly、RouteByLatency、RouteRandomly：读到从节点上滞后的令牌会让已删除条目可读")
+		}
+	case *goredis.Client:
+	default:
+		if cfg.WaitReplicas > 0 {
+			return agentErrors.Newf(agentErrors.CodeInvalidInput, "cache/redis 的 WaitReplicas 需要 *redis.Client 或 *redis.ClusterClient，得到 %T", client)
+		}
+	}
+	if cfg.DeleteBatch < 0 || cfg.WaitReplicas < 0 || cfg.WaitTimeout < 0 {
+		return agentErrors.New(agentErrors.CodeInvalidInput, "cache/redis 配置无效：DeleteBatch、WaitReplicas、WaitTimeout 不能为负")
+	}
+	return nil
+}
+
+// requireMaster 用 ROLE 确认所连节点是主节点。
+func requireMaster(ctx context.Context, client goredis.UniversalClient) error {
+	role, err := client.Do(ctx, "role").Slice()
+	if err != nil {
+		return fmt.Errorf("执行 ROLE 失败：%w", err)
+	}
+	if len(role) == 0 || role[0] != "master" {
+		return agentErrors.Newf(agentErrors.CodeInvalidInput, "cache/redis 须连接主节点，ROLE 返回 %v：读到从节点上滞后的令牌会让已删除条目可读", role)
+	}
+	return nil
+}
+
+// warnEviction 在淘汰策略不是 noeviction 时告警：标签成员集合可能被淘汰，DeleteTag 只能靠 TTL 物理删除对应条目。
+// CONFIG 被禁用（托管服务常见）时静默跳过。
+func warnEviction(ctx context.Context, client goredis.UniversalClient) {
+	cfg, err := client.ConfigGet(ctx, "maxmemory-policy").Result()
+	if err != nil {
+		return
+	}
+	if policy, ok := cfg["maxmemory-policy"]; ok && policy != "noeviction" {
+		slog.Warn("cache/redis 所在 Redis 的淘汰策略不是 noeviction，标签成员集合被淘汰时 DeleteTag 只能依靠 TTL 物理删除条目",
+			"maxmemory-policy", policy)
+	}
 }
 
 // parseRedisMajor 从 INFO server 的输出中取 redis_version 的主版本号。

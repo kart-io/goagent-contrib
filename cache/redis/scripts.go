@@ -36,7 +36,7 @@ type scriptCall struct {
 }
 
 // runScripts 把同一步内对多个键的同一脚本调用放进一个 pipeline。
-// 先用 EVALSHA；服务端没有缓存脚本（NOSCRIPT）的调用再用 EVAL 重发，两个脚本都幂等，重发无副作用。
+// 先用 EVALSHA；只有返回 NOSCRIPT 的调用再用 EVAL 重发，这些调用在服务端没有执行，重发不会执行两次。
 func runScripts(ctx context.Context, client goredis.UniversalClient, script *goredis.Script, calls []scriptCall) error {
 	if len(calls) == 0 {
 		return nil

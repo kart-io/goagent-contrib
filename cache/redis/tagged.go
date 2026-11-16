@@ -135,8 +135,8 @@ func (c *Cache) SetTagged(ctx context.Context, key string, value []byte, ttl tim
 // DeleteTag 先删除标签令牌，完成即满足 S1；再分批扫描成员集合，每批先 ZREM 成员、完成后再 UNLINK 条目。
 // 不在最后删除成员集合：集合清空时 Redis 自动删除它，整体删除会抹掉并发写入刚登记的新成员。
 func (c *Cache) DeleteTag(ctx context.Context, tag string) error {
-	if err := c.cfg.Client.Del(ctx, c.tokenKey(tag)).Err(); err != nil {
-		return fmt.Errorf("删除标签令牌失败：%w", err)
+	if err := c.deleteToken(ctx, c.tokenKey(tag)); err != nil {
+		return err
 	}
 	if hookAfterTokenDelete != nil {
 		hookAfterTokenDelete()
@@ -156,6 +156,44 @@ func (c *Cache) DeleteTag(ctx context.Context, tag string) error {
 		}
 		cursor = next
 	}
+}
+
+// deleteToken 是 DeleteTag 第 1 步。WaitReplicas > 0 时在令牌所在主节点的同一条连接上先 DEL 再 WAIT
+// （WAIT 只统计本连接此前的写入），确认数不足返回错误；此时令牌已删除，S1 已成立，由调用方重试。
+// DEL 与 WAIT 分两次往返而不用 pipeline：go-redis 的 pipeline 按 ReadTimeout 读取，WaitTimeout 更长时会误报超时。
+func (c *Cache) deleteToken(ctx context.Context, tk string) error {
+	if c.cfg.WaitReplicas == 0 {
+		if err := c.cfg.Client.Del(ctx, tk).Err(); err != nil {
+			return fmt.Errorf("删除标签令牌失败：%w", err)
+		}
+		return nil
+	}
+	var node *goredis.Client
+	switch client := c.cfg.Client.(type) {
+	case *goredis.ClusterClient:
+		var err error
+		if node, err = client.MasterForKey(ctx, tk); err != nil {
+			return fmt.Errorf("查找标签令牌所在主节点失败：%w", err)
+		}
+	case *goredis.Client:
+		node = client
+	default:
+		// New 已拒绝这种组合。
+		return fmt.Errorf("cache/redis 的 WaitReplicas 不支持客户端类型 %T", client)
+	}
+	conn := node.Conn()
+	defer func() { _ = conn.Close() }()
+	if err := conn.Del(ctx, tk).Err(); err != nil {
+		return fmt.Errorf("删除标签令牌失败：%w", err)
+	}
+	acked, err := conn.Wait(ctx, c.cfg.WaitReplicas, c.cfg.WaitTimeout).Result()
+	if err != nil {
+		return fmt.Errorf("等待从节点确认删除标签令牌失败：%w", err)
+	}
+	if acked < int64(c.cfg.WaitReplicas) {
+		return fmt.Errorf("删除标签令牌只得到 %d 个从节点确认，需要 %d 个", acked, c.cfg.WaitReplicas)
+	}
+	return nil
 }
 
 // removeBatch 处理 ZSCAN 返回的一批"成员, 分数"交替列表。

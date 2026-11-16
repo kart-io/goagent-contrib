@@ -258,8 +258,7 @@ func TestKeyEscaping(t *testing.T) {
 	requireValue(t, c, "%7B", "pct")
 	requireValue(t, c, "{", "brace")
 
-	keys, err := c.cfg.Client.Keys(opCtx(t), prefix+"*").Result()
-	require.NoError(t, err)
+	keys := scanKeys(t, c.cfg.Client, prefix+"*")
 	require.NotEmpty(t, keys)
 	for _, k := range keys {
 		require.NotContains(t, k, "{")
@@ -276,18 +275,15 @@ func TestKeyEscaping(t *testing.T) {
 
 // ttl <= 0 返回 CodeInvalidInput，不写入任何键（否则会成为永不过期的键）。
 func TestInvalidTTL(t *testing.T) {
-	c := openCache(t, newPrefix(t))
-	before, err := c.cfg.Client.DBSize(opCtx(t)).Result()
-	require.NoError(t, err)
+	prefix := newPrefix(t)
+	c := openCache(t, prefix)
 	for _, ttl := range []time.Duration{0, -time.Second} {
 		err := c.SetBytes(opCtx(t), "k", []byte("v"), ttl)
 		require.Truef(t, agentErrors.IsCode(err, agentErrors.CodeInvalidInput), "SetBytes ttl=%v: %v", ttl, err)
 		err = c.SetTagged(opCtx(t), "k", []byte("v"), ttl, "s")
 		require.Truef(t, agentErrors.IsCode(err, agentErrors.CodeInvalidInput), "SetTagged ttl=%v: %v", ttl, err)
 	}
-	after, err := c.cfg.Client.DBSize(opCtx(t)).Result()
-	require.NoError(t, err)
-	require.Equal(t, before, after)
+	require.Empty(t, scanKeys(t, c.cfg.Client, prefix+"*"))
 }
 
 func TestPrefixIsolation(t *testing.T) {
@@ -338,8 +334,7 @@ func TestDeleteTagBatches(t *testing.T) {
 	setHook(t, &hookBetweenRemoveAndUnlink, func() { batches++ })
 	require.NoError(t, c.DeleteTag(opCtx(t), "s"))
 	require.Greater(t, batches, 1)
-	keys, err := c.cfg.Client.Keys(opCtx(t), prefix+"e:*").Result()
-	require.NoError(t, err)
+	keys := scanKeys(t, c.cfg.Client, prefix+"e:*")
 	require.Empty(t, keys, strings.Join(keys, ","))
 	exists, err := c.cfg.Client.Exists(opCtx(t), c.memberKey("s")).Result()
 	require.NoError(t, err)

@@ -1,8 +1,10 @@
 package redis
 
 import (
+	"bytes"
 	"context"
 	crand "crypto/rand"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -13,10 +15,16 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kart-io/goagent/cache/cachetest"
+	agentErrors "github.com/kart-io/goagent/errors"
 )
 
 // 需要一个可写的 Redis：GOAGENT_REDIS_ADDR=127.0.0.1:56379（Cluster 为逗号分隔地址）。
-const addrEnv = "GOAGENT_REDIS_ADDR"
+// GOAGENT_REDIS_REPLICA_ADDR 是某个从节点的地址；GOAGENT_REDIS_CLUSTER=1 表示 GOAGENT_REDIS_ADDR 指向 Cluster。
+const (
+	addrEnv        = "GOAGENT_REDIS_ADDR"
+	replicaAddrEnv = "GOAGENT_REDIS_REPLICA_ADDR"
+	clusterEnv     = "GOAGENT_REDIS_CLUSTER"
+)
 
 func testClient(t *testing.T) goredis.UniversalClient {
 	t.Helper()
@@ -41,18 +49,39 @@ func newPrefix(t *testing.T) string {
 func deletePrefix(client goredis.UniversalClient, prefix string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	scan := func(ctx context.Context, node *goredis.Client) error {
+	_ = forEachMaster(ctx, client, func(ctx context.Context, node *goredis.Client) error {
 		iter := node.Scan(ctx, 0, prefix+"*", 1000).Iterator()
 		for iter.Next(ctx) {
 			node.Del(ctx, iter.Val())
 		}
 		return iter.Err()
-	}
+	})
+}
+
+// forEachMaster 对每个主节点执行 fn：Cluster 下 DBSIZE、KEYS、SCAN、CONFIG 只作用于单个节点，凡需要全局视图的检查都经过它。
+func forEachMaster(ctx context.Context, client goredis.UniversalClient, fn func(context.Context, *goredis.Client) error) error {
 	if cluster, ok := client.(*goredis.ClusterClient); ok {
-		_ = cluster.ForEachMaster(ctx, scan)
-		return
+		return cluster.ForEachMaster(ctx, fn)
 	}
-	_ = scan(ctx, client.(*goredis.Client))
+	return fn(ctx, client.(*goredis.Client))
+}
+
+// scanKeys 在全部主节点上 SCAN 匹配 pattern 的键。
+func scanKeys(t *testing.T, client goredis.UniversalClient, pattern string) []string {
+	t.Helper()
+	var mu sync.Mutex
+	var keys []string
+	err := forEachMaster(opCtx(t), client, func(ctx context.Context, node *goredis.Client) error {
+		iter := node.Scan(ctx, 0, pattern, 1000).Iterator()
+		for iter.Next(ctx) {
+			mu.Lock()
+			keys = append(keys, iter.Val())
+			mu.Unlock()
+		}
+		return iter.Err()
+	})
+	require.NoError(t, err)
+	return keys
 }
 
 // openCache 用独立客户端打开一个实例，模拟一个进程。
@@ -92,11 +121,103 @@ func TestConformance(t *testing.T) {
 	})
 }
 
-func TestNewRejectsRing(t *testing.T) {
-	ring := goredis.NewRing(&goredis.RingOptions{Addrs: map[string]string{"a": "127.0.0.1:1"}})
-	t.Cleanup(func() { _ = ring.Close() })
-	_, err := New(context.Background(), Config{Client: ring})
-	require.ErrorContains(t, err, "Ring")
+// 会读到从节点上滞后令牌的客户端配置一律拒绝。连接从节点的用例需要 GOAGENT_REDIS_REPLICA_ADDR（test-redis.sh 会提供）。
+func TestNewRejects(t *testing.T) {
+	const unreachable = "127.0.0.1:1"
+	cluster := func(opt goredis.ClusterOptions) func(t *testing.T) goredis.UniversalClient {
+		return func(t *testing.T) goredis.UniversalClient {
+			opt.Addrs = []string{unreachable}
+			return goredis.NewClusterClient(&opt)
+		}
+	}
+	for _, tc := range []struct {
+		name   string
+		client func(t *testing.T) goredis.UniversalClient
+	}{
+		{"Ring", func(t *testing.T) goredis.UniversalClient {
+			return goredis.NewRing(&goredis.RingOptions{Addrs: map[string]string{"a": unreachable}})
+		}},
+		{"Cluster ReadOnly", cluster(goredis.ClusterOptions{ReadOnly: true})},
+		{"Cluster RouteByLatency", cluster(goredis.ClusterOptions{RouteByLatency: true})},
+		{"Cluster RouteRandomly", cluster(goredis.ClusterOptions{RouteRandomly: true})},
+		{"哨兵 ReplicaOnly", func(t *testing.T) goredis.UniversalClient {
+			return goredis.NewFailoverClusterClient(&goredis.FailoverOptions{
+				MasterName: "m", SentinelAddrs: []string{unreachable}, ReplicaOnly: true,
+			})
+		}},
+		{"连接从节点", func(t *testing.T) goredis.UniversalClient {
+			addr := os.Getenv(replicaAddrEnv)
+			if addr == "" {
+				t.Skipf("未设置 %s，跳过", replicaAddrEnv)
+			}
+			return goredis.NewClient(&goredis.Options{Addr: addr})
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := tc.client(t)
+			t.Cleanup(func() { _ = client.Close() })
+			_, err := New(opCtx(t), Config{Client: client})
+			require.Truef(t, agentErrors.IsCode(err, agentErrors.CodeInvalidInput), "期望 CodeInvalidInput，得到 %v", err)
+		})
+	}
+}
+
+// 前缀含花括号与淘汰策略不是 noeviction 只告警、不拒绝；默认配置不告警。
+func TestNewWarnings(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		prefix string
+		policy string
+		want   string
+	}{
+		{"无告警", "", "noeviction", ""},
+		{"前缀含花括号", "{app}:", "noeviction", "花括号"},
+		{"淘汰策略", "", "allkeys-lru", "noeviction"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := testClient(t)
+			setPolicy(t, client, tc.policy)
+			var buf bytes.Buffer
+			old := slog.Default()
+			slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+			t.Cleanup(func() { slog.SetDefault(old) })
+
+			prefix := tc.prefix
+			if prefix == "" {
+				prefix = newPrefix(t)
+			}
+			_, err := New(opCtx(t), Config{Client: client, Prefix: prefix})
+			require.NoError(t, err)
+			if tc.want == "" {
+				require.Empty(t, buf.String())
+				return
+			}
+			require.Contains(t, buf.String(), "level=WARN")
+			require.Contains(t, buf.String(), tc.want)
+		})
+	}
+}
+
+// setPolicy 在全部主节点上设置 maxmemory-policy，测试结束时恢复原值。
+func setPolicy(t *testing.T, client goredis.UniversalClient, policy string) {
+	t.Helper()
+	var mu sync.Mutex
+	old := map[string]string{}
+	require.NoError(t, forEachMaster(opCtx(t), client, func(ctx context.Context, node *goredis.Client) error {
+		cur, err := node.ConfigGet(ctx, "maxmemory-policy").Result()
+		if err != nil {
+			return err
+		}
+		mu.Lock()
+		old[node.Options().Addr] = cur["maxmemory-policy"]
+		mu.Unlock()
+		return node.ConfigSet(ctx, "maxmemory-policy", policy).Err()
+	}))
+	t.Cleanup(func() {
+		_ = forEachMaster(context.Background(), client, func(ctx context.Context, node *goredis.Client) error {
+			return node.ConfigSet(ctx, "maxmemory-policy", old[node.Options().Addr]).Err()
+		})
+	})
 }
 
 func TestNewRejectsInvalidConfig(t *testing.T) {
@@ -113,7 +234,7 @@ func TestNewRejectsInvalidConfig(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := New(context.Background(), tc.cfg)
-			require.Error(t, err)
+			require.Truef(t, agentErrors.IsCode(err, agentErrors.CodeInvalidInput), "期望 CodeInvalidInput，得到 %v", err)
 		})
 	}
 }

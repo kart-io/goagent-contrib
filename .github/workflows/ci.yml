@@ -18,12 +18,14 @@ jobs:
       matrix:
         module:
           - acp
+          - cache/redis
           - document
           - document/pdf
           - durable/pgstore
           - httpagent
           - management
           - management/harness
+          - memory/pgvector
           - retrieval
           - retrieval/cohere
           - retrieval/qdrant
@@ -31,6 +33,7 @@ jobs:
           - tools/database
           - tools/practical
     # pgstore 和 management 使用真实数据库；每个矩阵任务独享服务容器。
+    # cache/redis 与 memory/pgvector 在 CI 中没有 Redis、pgvector 服务，外部服务测试跳过，只覆盖编译、vet 与 lint。
     services:
       postgres:
         image: postgres:17.6-alpine
@@ -51,12 +54,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 管理入口已迁入核心；与 management/go.mod 锁定同一份源码。
+      # 全部模块与同一份核心源码联调：固定为 v0.54.0，cache/redis、memory/pgvector 依赖其中的 cache.Bytes 与 memorytest。
       - name: Checkout management core
         uses: actions/checkout@v4
         with:
           repository: kart-io/goagent
-          ref: 54c308ffa69dec18d332f39517606b16f424407d
+          ref: f98f638be17fbe8f2bde1654cc36c491f8d569c4
           path: .goagent-core
 
       - uses: actions/setup-go@v5

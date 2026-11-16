@@ -9,7 +9,9 @@
 //   - 令牌的读写都到主节点：读到从节点上滞后的旧令牌会让已删除条目可读。
 //
 // S2 的例外：写者在登记成员后、再次登记前失败且恰有 DeleteTag 在其间移除了成员，客户端超时重试使写入迟到，
-// 另一个 DeleteTag 在移除成员与删除条目之间崩溃，成员集合被 maxmemory 淘汰，以及过期键的回收延迟。
+// 另一个 DeleteTag 在移除成员与删除条目之间崩溃，成员集合被 maxmemory 淘汰，过期键的回收延迟，
+// 成员集合所在节点时钟向前跳变（成员被提前清理），条目所在节点时钟向后跳变（条目存活超过 TTL 而成员已被剪除），
+// 以及主从切换丢失已确认的 ZREM、UNLINK 或成员登记（WaitReplicas 不覆盖这些命令）。
 // 这些情形下条目始终读不到，物理删除依靠 TTL 加 Redis 的过期回收周期。
 package redis
 
@@ -89,7 +91,7 @@ func New(ctx context.Context, cfg Config) (*Cache, error) {
 		return nil, err
 	}
 	if major < minRedisMajor {
-		return nil, fmt.Errorf("cache/redis 需要 Redis %d 及以上，服务端主版本为 %d", minRedisMajor, major)
+		return nil, agentErrors.Newf(agentErrors.CodeInvalidInput, "cache/redis 需要 Redis %d 及以上，服务端主版本为 %d", minRedisMajor, major)
 	}
 	// Cluster 客户端只把命令路由到主节点（ReadOnly 等选项已在上面拒绝），不逐个检查。
 	if _, ok := cfg.Client.(*goredis.ClusterClient); !ok {

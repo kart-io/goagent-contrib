@@ -2,28 +2,26 @@
 //
 // 命名空间内做精确扫描（主键前缀过滤加逐行余弦距离），不建 ANN 索引：向量维度不固定（不同嵌入模型维度不同），HNSW 无法使用；
 // 长期记忆按租户或用户分命名空间，单命名空间记录数受 Retention.MaxRecords 约束（通常数千以内），精确扫描足够，
-// 且排序与 memory.MemoryIndex 一致（分数在 float32 精度内）。向量较大时行数据走 TOAST，扫描成本随命名空间大小线性增长；
+// 且排序与 memory.MemoryIndex 一致：并列按 ID 的字节序（COLLATE "C"）升序；分数为 float32 精度，与 MemoryIndex 相差在 1e-5 内。向量较大时行数据走 TOAST，扫描成本随命名空间大小线性增长；
 // 命名空间规模远超此范围时建议给数据库角色设置 statement_timeout，并改为按固定维度分表加 HNSW 索引的实现。
 //
 // 前置条件：
 //   - 已执行 CREATE EXTENSION vector（需要较高权限，由宿主或 DBA 完成，不在 Schema 中）。
 //   - Pool 指向主库：从库复制延迟会让刚删除的向量仍被召回。可与 durable/pgstore 共用同一个连接池。
 //   - 表结构见 Schema，由宿主建表。
+//
+// 限制：向量超过 16000 维时由数据库报错；ID 不能含 NUL（Postgres text 限制），写入时由数据库报错。
 package pgvector
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
-	"slices"
-	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	pgv "github.com/pgvector/pgvector-go"
 
-	agentErrors "github.com/kart-io/goagent/errors"
 	"github.com/kart-io/goagent/memory"
 )
 
@@ -64,13 +62,14 @@ func New(ctx context.Context, cfg Config) (*Index, error) {
 
 // Upsert 归一化后写入；拒绝非法命名空间、零向量与非有限值。同 ID 覆盖，维度可以改变。
 func (x *Index) Upsert(ctx context.Context, ns []string, id string, vector []float32) error {
-	if err := validNamespace(ns); err != nil {
+	if err := memory.ValidateNamespace(ns); err != nil {
 		return err
 	}
-	unit, err := normalize(vector)
+	unit64, err := memory.NormalizeVector(vector)
 	if err != nil {
 		return err
 	}
+	unit := toFloat32(unit64)
 	_, err = x.pool.Exec(ctx, `
 INSERT INTO goagent_memory_vectors (ns, id, dim, vec) VALUES ($1, $2, $3, $4)
 ON CONFLICT (ns, id) DO UPDATE SET dim = EXCLUDED.dim, vec = EXCLUDED.vec`,
@@ -83,7 +82,7 @@ ON CONFLICT (ns, id) DO UPDATE SET dim = EXCLUDED.dim, vec = EXCLUDED.vec`,
 
 // Delete 删除精确命名空间中的一个键，键不存在不是错误。
 func (x *Index) Delete(ctx context.Context, ns []string, id string) error {
-	if validNamespace(ns) != nil {
+	if memory.ValidateNamespace(ns) != nil {
 		return nil
 	}
 	if _, err := x.pool.Exec(ctx, `DELETE FROM goagent_memory_vectors WHERE ns = $1 AND id = $2`, ns, id); err != nil {
@@ -97,16 +96,17 @@ func (x *Index) Search(ctx context.Context, ns []string, vector []float32, k int
 	if k <= 0 {
 		return nil, nil
 	}
-	unit, err := normalize(vector)
+	unit64, err := memory.NormalizeVector(vector)
 	if err != nil {
 		return nil, err
 	}
-	if validNamespace(ns) != nil {
+	unit := toFloat32(unit64)
+	if memory.ValidateNamespace(ns) != nil {
 		return nil, nil
 	}
 	rows, err := x.pool.Query(ctx, `
 SELECT id, vec <=> $3 AS distance FROM goagent_memory_vectors
-WHERE ns = $1 AND dim = $2 ORDER BY vec <=> $3, id LIMIT $4`,
+WHERE ns = $1 AND dim = $2 ORDER BY vec <=> $3, id COLLATE "C" LIMIT $4`,
 		ns, len(unit), pgv.NewVector(unit), k)
 	if err != nil {
 		return nil, fmt.Errorf("检索向量失败：%w", err)
@@ -114,9 +114,11 @@ WHERE ns = $1 AND dim = $2 ORDER BY vec <=> $3, id LIMIT $4`,
 	hits, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (memory.Hit, error) {
 		var h memory.Hit
 		var distance float64
-		err := row.Scan(&h.ID, &distance)
+		if err := row.Scan(&h.ID, &distance); err != nil {
+			return h, err
+		}
 		h.Score = 1 - distance
-		return h, err
+		return h, nil
 	})
 	if err != nil {
 		return nil, fmt.Errorf("读取检索结果失败：%w", err)
@@ -126,7 +128,7 @@ WHERE ns = $1 AND dim = $2 ORDER BY vec <=> $3, id LIMIT $4`,
 
 // IDs 列出精确命名空间中的全部键。
 func (x *Index) IDs(ctx context.Context, ns []string) ([]string, error) {
-	if validNamespace(ns) != nil {
+	if memory.ValidateNamespace(ns) != nil {
 		return nil, nil
 	}
 	rows, err := x.pool.Query(ctx, `SELECT id FROM goagent_memory_vectors WHERE ns = $1`, ns)
@@ -142,7 +144,7 @@ func (x *Index) IDs(ctx context.Context, ns []string) ([]string, error) {
 
 // Clear 删除精确命名空间中的全部键，不递归到子命名空间。
 func (x *Index) Clear(ctx context.Context, ns []string) error {
-	if validNamespace(ns) != nil {
+	if memory.ValidateNamespace(ns) != nil {
 		return nil
 	}
 	if _, err := x.pool.Exec(ctx, `DELETE FROM goagent_memory_vectors WHERE ns = $1`, ns); err != nil {
@@ -151,39 +153,11 @@ func (x *Index) Clear(ctx context.Context, ns []string) error {
 	return nil
 }
 
-// validNamespace 与 memory.MemoryIndex 的校验一致：非空、组件不能为空白；另外 text[] 存不了 NUL。
-func validNamespace(ns []string) error {
-	if len(ns) == 0 || slices.ContainsFunc(ns, func(s string) bool { return strings.TrimSpace(s) == "" }) {
-		return agentErrors.Newf(agentErrors.CodeInvalidInput, "长期记忆需要命名空间：用 memory.WithNamespace 绑定可信身份").WithComponent("pgvector").WithOperation("namespace")
+// toFloat32 把归一化后的单位向量转为 pgvector 存储的 float32。
+func toFloat32(unit []float64) []float32 {
+	out := make([]float32, len(unit))
+	for i, f := range unit {
+		out[i] = float32(f)
 	}
-	if slices.ContainsFunc(ns, func(s string) bool { return strings.ContainsRune(s, 0) }) {
-		return agentErrors.Newf(agentErrors.CodeInvalidInput, "长期记忆的命名空间组件不能包含 NUL").WithComponent("pgvector").WithOperation("namespace")
-	}
-	return nil
-}
-
-// normalize 与 memory.MemoryIndex 同样以 float64 计算范数（避免大幅值 float32 平方溢出），结果转回 float32 存储。
-func normalize(v []float32) ([]float32, error) {
-	scale := 0.0
-	for _, f := range v {
-		x := float64(f)
-		if math.IsNaN(x) || math.IsInf(x, 0) {
-			return nil, agentErrors.Newf(agentErrors.CodeInvalidInput, "向量含非有限值").WithComponent("pgvector").WithOperation("normalize")
-		}
-		scale = max(scale, math.Abs(x))
-	}
-	if scale == 0 {
-		return nil, agentErrors.Newf(agentErrors.CodeInvalidInput, "向量为空或全为零").WithComponent("pgvector").WithOperation("normalize")
-	}
-	norm := 0.0
-	for _, f := range v {
-		s := float64(f) / scale
-		norm += s * s
-	}
-	norm = math.Sqrt(norm)
-	out := make([]float32, len(v))
-	for i, f := range v {
-		out[i] = float32(float64(f) / scale / norm)
-	}
-	return out, nil
+	return out
 }

@@ -3,8 +3,11 @@ package pgvector
 import (
 	"context"
 	crand "crypto/rand"
+	"fmt"
+	"math/rand/v2"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -118,4 +121,69 @@ func TestSharedAcrossInstances(t *testing.T) {
 	require.Len(t, hits, 1)
 	require.Equal(t, "m1", hits[0].ID)
 	require.InDelta(t, 1, hits[0].Score, 1e-6)
+}
+
+// 1536 维下与 MemoryIndex 对照：float32 累加的分数差在 1e-5 内，顺序一致。
+func TestScoresMatchMemoryIndex(t *testing.T) {
+	dsn := newDatabase(t, true)
+	pool := newPool(t, dsn)
+	ctx := context.Background()
+	_, err := pool.Exec(ctx, Schema)
+	require.NoError(t, err)
+	x, err := New(ctx, Config{Pool: pool})
+	require.NoError(t, err)
+	ref := memory.NewMemoryIndex()
+
+	const dim = 1536
+	rng := rand.New(rand.NewPCG(1, 2))
+	randVec := func() []float32 {
+		v := make([]float32, dim)
+		for i := range v {
+			v[i] = float32(rng.NormFloat64())
+		}
+		return v
+	}
+	ns := []string{"t", "alice"}
+	for i := range 50 {
+		id, v := fmt.Sprintf("m%02d", i), randVec()
+		require.NoError(t, x.Upsert(ctx, ns, id, v))
+		require.NoError(t, ref.Upsert(ctx, ns, id, v))
+	}
+	query := randVec()
+	got, err := x.Search(ctx, ns, query, 20)
+	require.NoError(t, err)
+	want, err := ref.Search(ctx, ns, query, 20)
+	require.NoError(t, err)
+	require.Len(t, got, len(want))
+	for i := 1; i < len(want); i++ {
+		require.Greater(t, want[i-1].Score-want[i].Score, 1e-4, "测试数据须避开近邻并列")
+	}
+	for i := range want {
+		require.Equal(t, want[i].ID, got[i].ID, "第 %d 名", i)
+		require.InDelta(t, want[i].Score, got[i].Score, 1e-5, want[i].ID)
+	}
+}
+
+// 并列按字节序而非数据库排序规则；en_US 下 a-b 会排在 ab 之前、B 之后于 a。
+func TestTieOrderIsByteOrder(t *testing.T) {
+	dsn := newDatabase(t, true)
+	pool := newPool(t, dsn)
+	ctx := context.Background()
+	_, err := pool.Exec(ctx, Schema)
+	require.NoError(t, err)
+	x, err := New(ctx, Config{Pool: pool})
+	require.NoError(t, err)
+	ids := []string{"a", "B", "a-b", "ab", "_z"}
+	for _, id := range ids {
+		require.NoError(t, x.Upsert(ctx, []string{"t"}, id, []float32{1, 0}))
+	}
+	hits, err := x.Search(ctx, []string{"t"}, []float32{1, 0}, 5)
+	require.NoError(t, err)
+	var got []string
+	for _, h := range hits {
+		got = append(got, h.ID)
+	}
+	want := slices.Clone(ids)
+	slices.Sort(want)
+	require.Equal(t, want, got)
 }

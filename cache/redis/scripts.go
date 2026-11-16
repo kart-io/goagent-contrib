@@ -30,6 +30,16 @@ end
 return 1
 `)
 
+// deleteTokenScript 删除令牌并保证产生复制流：令牌已不存在（重试或并发删除）时 DEL 是空操作，不推进本连接的复制偏移，
+// 随后的 WAIT 会按旧偏移立即返回；此时写入随机值再删除，脚本按效果复制，SET 与 DEL 都进入复制流。
+var deleteTokenScript = goredis.NewScript(`
+if redis.call('DEL', KEYS[1]) == 0 then
+  redis.call('SET', KEYS[1], ARGV[1])
+  redis.call('DEL', KEYS[1])
+end
+return 1
+`)
+
 type scriptCall struct {
 	key  string
 	args []any

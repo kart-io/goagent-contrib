@@ -158,9 +158,9 @@ func (c *Cache) DeleteTag(ctx context.Context, tag string) error {
 	}
 }
 
-// deleteToken 是 DeleteTag 第 1 步。WaitReplicas > 0 时在令牌所在主节点的同一条连接上先 DEL 再 WAIT
+// deleteToken 是 DeleteTag 第 1 步。WaitReplicas > 0 时在令牌所在主节点的同一条连接上先执行 deleteTokenScript 再 WAIT
 // （WAIT 只统计本连接此前的写入），确认数不足返回错误；此时令牌已删除，S1 已成立，由调用方重试。
-// DEL 与 WAIT 分两次往返而不用 pipeline：go-redis 的 pipeline 按 ReadTimeout 读取，WaitTimeout 更长时会误报超时。
+// 删除与 WAIT 分两次往返而不用 pipeline：go-redis 的 pipeline 按 ReadTimeout 读取，WaitTimeout 更长时会误报超时。
 func (c *Cache) deleteToken(ctx context.Context, tk string) error {
 	if c.cfg.WaitReplicas == 0 {
 		if err := c.cfg.Client.Del(ctx, tk).Err(); err != nil {
@@ -183,7 +183,8 @@ func (c *Cache) deleteToken(ctx context.Context, tk string) error {
 	}
 	conn := node.Conn()
 	defer func() { _ = conn.Close() }()
-	if err := conn.Del(ctx, tk).Err(); err != nil {
+	// Run 先 EVALSHA，NOSCRIPT 时在同一连接上 EVAL 重发，未执行的调用不会执行两次。
+	if err := deleteTokenScript.Run(ctx, conn, []string{tk}, newToken()).Err(); err != nil {
 		return fmt.Errorf("删除标签令牌失败：%w", err)
 	}
 	acked, err := conn.Wait(ctx, c.cfg.WaitReplicas, c.cfg.WaitTimeout).Result()

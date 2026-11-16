@@ -19,11 +19,13 @@ import (
 )
 
 // 需要一个可写的 Redis：GOAGENT_REDIS_ADDR=127.0.0.1:56379（Cluster 为逗号分隔地址）。
-// GOAGENT_REDIS_REPLICA_ADDR 是某个从节点的地址；GOAGENT_REDIS_CLUSTER=1 表示 GOAGENT_REDIS_ADDR 指向 Cluster。
+// GOAGENT_REDIS_REPLICA_ADDR 是某个从节点的地址；单机模式下 GOAGENT_REDIS_REPLICATED_ADDR 是它的主节点。
+// GOAGENT_REDIS_CLUSTER=1 表示 GOAGENT_REDIS_ADDR 指向 Cluster。
 const (
-	addrEnv        = "GOAGENT_REDIS_ADDR"
-	replicaAddrEnv = "GOAGENT_REDIS_REPLICA_ADDR"
-	clusterEnv     = "GOAGENT_REDIS_CLUSTER"
+	addrEnv           = "GOAGENT_REDIS_ADDR"
+	replicaAddrEnv    = "GOAGENT_REDIS_REPLICA_ADDR"
+	replicatedAddrEnv = "GOAGENT_REDIS_REPLICATED_ADDR"
+	clusterEnv        = "GOAGENT_REDIS_CLUSTER"
 )
 
 func testClient(t *testing.T) goredis.UniversalClient {

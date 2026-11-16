@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 启动专用 Redis 容器并运行 cache/redis 全部测试（含竞态检测），结束后删除容器。
-# 默认单机：一个被测主节点，另起一对独立主从提供从节点地址（不挂在被测主节点下，WAIT 无从节点的用例才成立）。
+# 默认单机：一个被测主节点，另起一对独立主从提供主从地址（不挂在被测主节点下，WAIT 无从节点的用例才成立）。
 # --cluster：host 网络上 6 个实例（端口 57001–57006，集群总线 47001–47006）组成 3 主 3 从的 Cluster。
 set -euo pipefail
 source "$(dirname "$0")/wait-for.sh"
@@ -47,17 +47,19 @@ if ((cluster)); then
 else
   port=${REDIS_TEST_PORT:-56379}
   replica_port=${REDIS_TEST_REPLICA_PORT:-56380}
+  replicated_port=${REDIS_TEST_REPLICATED_PORT:-56381}
   network=$name
   docker network create "$network" >/dev/null
   containers+=("$name" "$name-src" "$name-replica")
   docker run -d --rm --name "$name" -p "127.0.0.1:$port:6379" redis:7.4 >/dev/null
-  docker run -d --rm --name "$name-src" --network "$network" redis:7.4 >/dev/null
+  docker run -d --rm --name "$name-src" --network "$network" -p "127.0.0.1:$replicated_port:6379" redis:7.4 >/dev/null
   docker run -d --rm --name "$name-replica" --network "$network" -p "127.0.0.1:$replica_port:6379" redis:7.4 \
     redis-server --replicaof "$name-src" 6379 >/dev/null
   wait_for "$name" "PING" bash -c "[[ \"\$(docker exec $name redis-cli ping)\" == PONG ]]"
   wait_for "$name-replica" "从节点复制连接" bash -c "docker exec $name-replica redis-cli info replication | grep -q '^master_link_status:up'"
   export GOAGENT_REDIS_ADDR="127.0.0.1:$port"
   export GOAGENT_REDIS_REPLICA_ADDR="127.0.0.1:$replica_port"
+  export GOAGENT_REDIS_REPLICATED_ADDR="127.0.0.1:$replicated_port"
 fi
 go vet ./...
 go test -race -count=1 "$@" ./...

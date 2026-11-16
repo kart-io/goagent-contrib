@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
@@ -64,11 +65,18 @@ func TestClusterConformance(t *testing.T) {
 }
 
 // WaitReplicas=1：从节点正常时 DeleteTag 成功；令牌所在主节点的从节点被 CLIENT PAUSE WRITE 暂停（不处理复制流）时，
-// DeleteTag 返回错误，但令牌已删除，条目不可读。
+// DeleteTag 返回错误，另一个实例（新连接）重试也返回错误，令牌已删除，条目不可读。
 func TestClusterWaitPausedReplica(t *testing.T) {
 	cluster := clusterClient(t)
-	c, err := New(opCtx(t), Config{Client: cluster, Prefix: newPrefix(t), WaitReplicas: 1})
-	require.NoError(t, err)
+	prefix := newPrefix(t)
+	open := func() *Cache {
+		client := goredis.NewClusterClient(&goredis.ClusterOptions{Addrs: strings.Split(os.Getenv(addrEnv), ",")})
+		t.Cleanup(func() { _ = client.Close() })
+		c, err := New(opCtx(t), Config{Client: client, Prefix: prefix, WaitReplicas: 1, WaitTimeout: 200 * time.Millisecond})
+		require.NoError(t, err)
+		return c
+	}
+	c := open()
 
 	require.NoError(t, c.SetTagged(opCtx(t), "k", []byte("v"), longTTL, "s"))
 	require.NoError(t, c.DeleteTag(opCtx(t), "s"))
@@ -79,18 +87,8 @@ func TestClusterWaitPausedReplica(t *testing.T) {
 	require.NoError(t, err)
 	replicas := replicaAddrs(t, master)
 	require.NotEmpty(t, replicas)
-	for _, addr := range replicas {
-		replica := goredis.NewClient(&goredis.Options{Addr: addr})
-		t.Cleanup(func() {
-			_ = replica.Do(context.Background(), "client", "unpause").Err()
-			_ = replica.Close()
-		})
-		require.NoError(t, replica.Do(opCtx(t), "client", "pause", 2000, "write").Err())
-	}
-
-	err = c.DeleteTag(opCtx(t), "s")
-	require.ErrorContains(t, err, "只得到 0 个从节点确认")
-	requireMiss(t, c, "k")
+	pauseReplicas(t, replicas)
+	requireRetryNotAcked(t, c, open)
 }
 
 // replicaAddrs 从主节点的 ROLE 回复中取出各从节点地址。

@@ -3,6 +3,7 @@
 # 默认单机：一个被测主节点，另起一对独立主从提供从节点地址（不挂在被测主节点下，WAIT 无从节点的用例才成立）。
 # --cluster：host 网络上 6 个实例（端口 57001–57006，集群总线 47001–47006）组成 3 主 3 从的 Cluster。
 set -euo pipefail
+source "$(dirname "$0")/wait-for.sh"
 cluster=0
 if [[ "${1:-}" == "--cluster" ]]; then
   cluster=1
@@ -18,18 +19,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# wait_for 名称 条件命令…：轮询直到条件成立，30 秒超时。
-wait_for() {
-  local what=$1
-  shift
-  for _ in $(seq 150); do
-    if "$@" >/dev/null 2>&1; then return 0; fi
-    sleep 0.2
-  done
-  echo "等待超时：$what" >&2
-  exit 1
-}
-
 if ((cluster)); then
   ports=(57001 57002 57003 57004 57005 57006)
   for p in "${ports[@]}"; do
@@ -39,15 +28,15 @@ if ((cluster)); then
       --cluster-config-file "nodes-$p.conf" --save '' --appendonly no >/dev/null
   done
   for p in "${ports[@]}"; do
-    wait_for "$p PING" bash -c "[[ \"\$(docker exec $name-$p redis-cli -p $p ping)\" == PONG ]]"
+    wait_for "$name-$p" "$p PING" bash -c "[[ \"\$(docker exec $name-$p redis-cli -p $p ping)\" == PONG ]]"
   done
   docker exec "$name-${ports[0]}" redis-cli --cluster create "${ports[@]/#/127.0.0.1:}" \
     --cluster-replicas 1 --cluster-yes >/dev/null
   replica_addr=
   for p in "${ports[@]}"; do
-    wait_for "$p cluster_state:ok" bash -c "docker exec $name-$p redis-cli -p $p cluster info | grep -q '^cluster_state:ok'"
+    wait_for "$name-$p" "$p cluster_state:ok" bash -c "docker exec $name-$p redis-cli -p $p cluster info | grep -q '^cluster_state:ok'"
     if [[ "$(docker exec "$name-$p" redis-cli -p "$p" role | head -1)" == slave ]]; then
-      wait_for "$p 复制连接" bash -c "docker exec $name-$p redis-cli -p $p info replication | grep -q '^master_link_status:up'"
+      wait_for "$name-$p" "$p 复制连接" bash -c "docker exec $name-$p redis-cli -p $p info replication | grep -q '^master_link_status:up'"
       replica_addr=${replica_addr:-127.0.0.1:$p}
     fi
   done
@@ -65,8 +54,8 @@ else
   docker run -d --rm --name "$name-src" --network "$network" redis:7.4 >/dev/null
   docker run -d --rm --name "$name-replica" --network "$network" -p "127.0.0.1:$replica_port:6379" redis:7.4 \
     redis-server --replicaof "$name-src" 6379 >/dev/null
-  wait_for "PING" bash -c "[[ \"\$(docker exec $name redis-cli ping)\" == PONG ]]"
-  wait_for "从节点复制连接" bash -c "docker exec $name-replica redis-cli info replication | grep -q '^master_link_status:up'"
+  wait_for "$name" "PING" bash -c "[[ \"\$(docker exec $name redis-cli ping)\" == PONG ]]"
+  wait_for "$name-replica" "从节点复制连接" bash -c "docker exec $name-replica redis-cli info replication | grep -q '^master_link_status:up'"
   export GOAGENT_REDIS_ADDR="127.0.0.1:$port"
   export GOAGENT_REDIS_REPLICA_ADDR="127.0.0.1:$replica_port"
 fi

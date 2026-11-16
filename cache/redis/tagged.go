@@ -160,6 +160,7 @@ func (c *Cache) DeleteTag(ctx context.Context, tag string) error {
 
 // deleteToken 是 DeleteTag 第 1 步。WaitReplicas > 0 时在令牌所在主节点的同一条连接上先执行 deleteTokenScript 再 WAIT
 // （WAIT 只统计本连接此前的写入），确认数不足返回错误；此时令牌已删除，S1 已成立，由调用方重试。
+// 脚本在令牌不存在时 SET 再 DEL，noeviction 且内存已满时这一步返回 OOM 错误，宁可报错也不误报已确认。
 // 删除与 WAIT 分两次往返而不用 pipeline：go-redis 的 pipeline 按 ReadTimeout 读取，WaitTimeout 更长时会误报超时。
 func (c *Cache) deleteToken(ctx context.Context, tk string) error {
 	if c.cfg.WaitReplicas == 0 {

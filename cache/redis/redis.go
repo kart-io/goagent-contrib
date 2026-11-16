@@ -46,6 +46,7 @@ type Config struct {
 	DeleteBatch int
 	// WaitReplicas 大于 0 时，DeleteTag 删除令牌后等待这么多从节点确认，不足则返回错误。默认 0。
 	// 它缩小而不消除主从切换让已删除条目重新可读的窗口：被提升的从节点不一定是确认过的那些。
+	// 令牌已被删除时重试会临时写入令牌键以产生复制流，因此 noeviction 且内存已满时重试返回 OOM 错误，释放内存后重试即可。
 	WaitReplicas int
 	// WaitTimeout 是等待从节点确认的时限，默认 1 秒。
 	WaitTimeout time.Duration
@@ -62,7 +63,7 @@ var (
 )
 
 // New 校验配置、服务端版本与"令牌读写都到主节点"的前提后返回 Cache；不关闭 Client，由调用方负责。
-// 配置错误返回 CodeInvalidInput。
+// 配置错误（含服务端版本过低、连到从节点）返回 CodeInvalidInput；连接或读取服务端信息失败时包装底层错误返回，不带错误码。
 func New(ctx context.Context, cfg Config) (*Cache, error) {
 	if err := validateConfig(cfg); err != nil {
 		return nil, err

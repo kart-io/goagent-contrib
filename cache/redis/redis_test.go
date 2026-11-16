@@ -42,10 +42,14 @@ func testClient(t *testing.T) goredis.UniversalClient {
 // newPrefix 返回一个随机前缀，测试结束时删除该前缀下的全部键。
 func newPrefix(t *testing.T) string {
 	t.Helper()
-	prefix := "goagent:test:" + strings.ToLower(crand.Text()[:12]) + ":"
+	prefix := randomPrefix()
 	client := testClient(t)
 	t.Cleanup(func() { deletePrefix(client, prefix) })
 	return prefix
+}
+
+func randomPrefix() string {
+	return "goagent:test:" + strings.ToLower(crand.Text()[:12]) + ":"
 }
 
 func deletePrefix(client goredis.UniversalClient, prefix string) {

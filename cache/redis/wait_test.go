@@ -2,9 +2,7 @@ package redis
 
 import (
 	"context"
-	crand "crypto/rand"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -38,7 +36,7 @@ func TestWaitPausedReplicaRetry(t *testing.T) {
 	if addr == "" || replica == "" {
 		t.Skipf("未设置 %s 与 %s，跳过", replicatedAddrEnv, replicaAddrEnv)
 	}
-	prefix := "goagent:test:" + strings.ToLower(crand.Text()[:12]) + ":"
+	prefix := randomPrefix()
 	open := func() *Cache {
 		client := goredis.NewClient(&goredis.Options{Addr: addr})
 		t.Cleanup(func() {

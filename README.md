@@ -39,7 +39,7 @@ mem, err := memory.New(memory.Config{Durable: store, Index: index, Embedder: emb
 agent, err := builder.NewSimpleBuilder(client).WithSessionLog(sessions).WithLongTermMemory(mem).WithModelCache(mc).Build()
 ```
 
-- **Redis 要求**：Redis 7 及以上；连接主节点（不能读从节点，`New` 会拒绝）；`maxmemory-policy` 建议 `noeviction`，否则 `New` 记录告警，被淘汰的标签集合会让部分条目只能等 TTL 回收。不支持 Ring 客户端。
+- **Redis 要求**：Redis 7 及以上；连接主节点（不能读从节点，`New` 会拒绝）；`maxmemory-policy` 建议 `noeviction`，否则 `New` 记录告警，被淘汰的标签集合会让部分条目只能等 TTL 回收。不支持 Ring 客户端。配置 `WaitReplicas` 时，令牌已删除后的重试会临时写入一个键，`noeviction` 且内存已满时返回 OOM 错误，释放内存后重试即可。
 - **`Prefix` 不要含 `{`、`}`**：Cluster 把花括号内的部分当作 hash tag，全部键会集中到一个槽；`New` 会记录告警。
 - **pgvector 要求**：预先执行 `CREATE EXTENSION vector`（需要较高权限，不在 Schema 中）；`pgvector.Schema` 由宿主纳入迁移流程；连接主库。
 - **pgvector 规模**：命名空间内精确扫描、不建 ANN 索引，适用规模与超出时的做法见 `memory/pgvector` 包文档。

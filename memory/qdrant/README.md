@@ -16,7 +16,7 @@ index, err := memqdrant.New(ctx, memqdrant.Config{Client: client}) // Prefix 默
 ## 映射规则
 
 - **集合**：每个维度一个集合 `<Prefix>_d<维度>`，距离为 Cosine。换嵌入模型后新旧维度的向量分属不同集合，`Search` 只查与查询同维度的集合。
-- **点 ID**：`uuid.NewSHA1(固定命名空间, nsKey + "\x00" + id)`，其中 `nsKey` 为命名空间各组件以 NUL 连接。payload 存 `ns`（即 `nsKey`，建 keyword 索引）与 `id`。
+- **点 ID**：`uuid.NewSHA1(uuid.NewSHA1(固定命名空间, nsKey), id)`，其中 `nsKey` 为命名空间各组件以 NUL 连接。分两层派生是因为键可以含 NUL，直接拼接会让不同的（命名空间, 键）撞 ID。payload 存 `ns`（即 `nsKey`，建 keyword 索引）与 `id`。
 - **Upsert**：校验命名空间、归一化后写入本维度集合，再从本前缀的其他维度集合删除同一点，保证同 ID 只保留最新向量。两步之间失败会让旧维度残留一份，下次写入同一 ID 或 `Memory.Reindex` 时清理。
 - **Search**：按 `ns` 精确过滤并精确检索（`exact`），排序与 `memory.MemoryIndex` 一致：分数降序，并列按 ID 字节序升序。Qdrant 不保证并列分数的返回顺序，第 k 名之后可能有并列时，以第 k 名分数减 1e-6 为阈值取出全部候选，在本地排序后截断。分数为 float32 精度，与 `MemoryIndex` 相差在 1e-5 内。
 - **IDs / Clear / Delete**：遍历本前缀的全部维度集合，按 `ns` 精确过滤，不涉及子命名空间。

@@ -285,9 +285,9 @@ func (x *Index) collection(dim int) string { return x.prefix + "_d" + strconv.It
 
 func namespaceKey(ns []string) string { return strings.Join(ns, "\x00") }
 
-// pointID 由命名空间与键派生；命名空间组件不含 NUL，拼接无歧义。
+// pointID 分两层派生：键可以含 NUL，与 nsKey 直接拼接会让 ([a b], c) 与 ([a], "b\x00c") 撞 ID。
 func pointID(nsKey, id string) *qc.PointId {
-	return qc.NewID(uuid.NewSHA1(pointNamespace, []byte(nsKey+"\x00"+id)).String())
+	return qc.NewID(uuid.NewSHA1(uuid.NewSHA1(pointNamespace, []byte(nsKey)), []byte(id)).String())
 }
 
 func nsFilter(nsKey string) *qc.Filter {
@@ -296,12 +296,15 @@ func nsFilter(nsKey string) *qc.Filter {
 
 func isNotFound(err error) bool { return grpcCode(err) == codes.NotFound }
 
+// isAlreadyExists 判断建集合冲突：v1.20 返回 AlreadyExists；旧版本可能以 InvalidArgument 加文案报告。
 func isAlreadyExists(err error) bool {
-	if grpcCode(err) == codes.AlreadyExists {
+	switch grpcCode(err) {
+	case codes.AlreadyExists:
 		return true
+	case codes.InvalidArgument:
+		return strings.Contains(err.Error(), "already exists")
 	}
-	// 部分版本以 InvalidArgument 加文案报告集合已存在。
-	return err != nil && strings.Contains(err.Error(), "already exists")
+	return false
 }
 
 func grpcCode(err error) codes.Code {

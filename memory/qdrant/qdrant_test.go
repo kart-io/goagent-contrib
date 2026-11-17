@@ -106,3 +106,40 @@ func TestTiesBeyondLimit(t *testing.T) {
 		})
 	}
 }
+
+// 键可以含 NUL：ns=[a b] 的 c 与 ns=[a] 的 "b\x00c" 是两个点，互不覆盖。
+func TestPointIDNoCollisionWithNULInID(t *testing.T) {
+	client := newClient(t)
+	ctx := context.Background()
+	x, err := New(ctx, Config{Client: client, Prefix: uniquePrefix(t, client)})
+	require.NoError(t, err)
+	pairs := []struct {
+		ns []string
+		id string
+	}{
+		{[]string{"a", "b"}, "c"},
+		{[]string{"a"}, "b\x00c"},
+	}
+	for _, p := range pairs {
+		require.NoError(t, x.Upsert(ctx, p.ns, p.id, []float32{1, 0}))
+	}
+	for _, p := range pairs {
+		ids, err := x.IDs(ctx, p.ns)
+		require.NoError(t, err)
+		require.Equal(t, []string{p.id}, ids, "%q", p.ns)
+		hits, err := x.Search(ctx, p.ns, []float32{1, 0}, 5)
+		require.NoError(t, err)
+		require.Len(t, hits, 1, "%q", p.ns)
+		require.Equal(t, p.id, hits[0].ID, "%q", p.ns)
+	}
+}
+
+// 并发写入时另一实例可能先建好集合：重复建集合视为成功。
+func TestCreateCollectionTwice(t *testing.T) {
+	client := newClient(t)
+	ctx := context.Background()
+	x, err := New(ctx, Config{Client: client, Prefix: uniquePrefix(t, client)})
+	require.NoError(t, err)
+	require.NoError(t, x.createCollection(ctx, x.collection(2), 2))
+	require.NoError(t, x.createCollection(ctx, x.collection(2), 2))
+}

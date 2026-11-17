@@ -10,6 +10,7 @@
 | [`durable/pgstore`](durable/pgstore) | 基于 Postgres 的 `durable.Store`、`durable.Scoped` 与会话日志 `session.Store`，支持多个实例共享持久运行与会话 | pgx |
 | [`cache/redis`](cache/redis) | Redis 版 `cache.Bytes` 与 `cache.Tagged`，多个实例共享模型调用缓存，一个实例遗忘记忆后其他实例的缓存条目被物理删除；单机、哨兵与 Cluster | go-redis |
 | [`memory/pgvector`](memory/pgvector) | pgvector 版 `memory.Index`，多个实例共享长期记忆的向量索引 | pgx、pgvector-go |
+| [`memory/qdrant`](memory/qdrant) | Qdrant 版 `memory.Index`，多个实例共享长期记忆的向量索引；每个嵌入维度一个集合 | qdrant go-client |
 | [`retrieval`](retrieval) | 检索器（BM25/TF-IDF、混合检索 RRF、多查询、重排、MMR）、内存向量库、RAG、OpenAI/HuggingFace 嵌入；满足 `interfaces.DocumentRetriever`，可传给 `builder.WithRetriever` | go-openai |
 | [`retrieval/qdrant`](retrieval/qdrant) | Qdrant 向量库 | qdrant go-client |
 | [`retrieval/cohere`](retrieval/cohere) | Cohere 嵌入与重排；空导入即向 `retrieval.NewEmbedder` 注册 | cohere-go |
@@ -82,10 +83,11 @@ Redis、pgvector 与端到端测试（均需要 Docker，启动临时容器、�
 ./scripts/test-redis.sh             # cache/redis，单机 Redis 7.4（端口 56379/56380，可用 REDIS_TEST_PORT、REDIS_TEST_REPLICA_PORT 覆盖）
 ./scripts/test-redis.sh --cluster   # cache/redis，3 主 3 从 Cluster（host 网络，端口 57001–57006）
 ./scripts/test-pgvector.sh          # memory/pgvector，pgvector 0.8.0 + Postgres 17（端口 55434，可用 PGVECTOR_TEST_PORT 覆盖）
+./scripts/test-memory-qdrant.sh     # memory/qdrant，Qdrant v1.20.2，存储在 tmpfs（gRPC 端口 56354、HTTP 56353，可用 QDRANT_TEST_PORT、QDRANT_TEST_HTTP_PORT 覆盖）
 ./scripts/test-distributed.sh       # integration/distributedmemory，同时起 Redis 与 pgvector（端口 56389/55444，可用 DISTRIBUTED_REDIS_PORT、DISTRIBUTED_PG_PORT 覆盖）
 ```
 
-连接变量为 `GOAGENT_REDIS_ADDR`（Cluster 为逗号分隔地址）与 `GOAGENT_PGVECTOR_DSN`，未设置时对应测试被跳过。`integration/distributedmemory` 是只含测试、不发布的模块：用两个实例共享同一 Redis 与 Postgres，验证一个实例 `Forget` 后其他实例写入的缓存条目被物理删除、召回能用到其他实例写入的向量；它让 `cache/redis` 的使用者不必引入 pgx 与 pgstore。
+连接变量为 `GOAGENT_REDIS_ADDR`（Cluster 为逗号分隔地址）、`GOAGENT_PGVECTOR_DSN` 与 `GOAGENT_QDRANT_ADDR`（memory/qdrant 的 gRPC 地址 host:port），未设置时对应测试被跳过。`integration/distributedmemory` 是只含测试、不发布的模块：用两个实例共享同一 Redis 与 Postgres，验证一个实例 `Forget` 后其他实例写入的缓存条目被物理删除、召回能用到其他实例写入的向量；它让 `cache/redis` 的使用者不必引入 pgx 与 pgstore。
 
 CI 对每个模块在 Go 1.27.3 下运行 vet、`go test -race` 与 golangci-lint，pgstore 连接服务容器中的 Postgres；数据库重启与同步提交测试需要专用容器，只在本地 `test-pgstore.sh` 中运行。
 

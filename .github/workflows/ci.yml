@@ -26,6 +26,7 @@ jobs:
           - management
           - management/harness
           - memory/pgvector
+          - memory/qdrant
           - retrieval
           - retrieval/cohere
           - retrieval/qdrant
@@ -33,7 +34,7 @@ jobs:
           - tools/database
           - tools/practical
     # pgstore 和 management 使用真实数据库；每个矩阵任务独享服务容器。
-    # cache/redis 与 memory/pgvector 在 CI 中没有 Redis、pgvector 服务，外部服务测试跳过，只覆盖编译、vet 与 lint。
+    # cache/redis、memory/pgvector 与 memory/qdrant 在 CI 中没有 Redis、pgvector、Qdrant 服务，外部服务测试跳过，只覆盖编译、vet 与 lint。
     services:
       postgres:
         image: postgres:17.6-alpine

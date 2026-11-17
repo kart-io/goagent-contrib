@@ -60,7 +60,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: kart-io/goagent
-          ref: f98f638be17fbe8f2bde1654cc36c491f8d569c4
+          ref: facb4ceac68c8c7e281e1ef309ac86f9e535a07e
           path: .goagent-core
 
       - uses: actions/setup-go@v5

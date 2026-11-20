@@ -41,15 +41,28 @@ type Config struct {
 	Pool *pgxpool.Pool
 	// RenewPool 是续约专用的小连接池；为 nil 时使用 Pool，高峰期续约可能在连接池中排队。
 	RenewPool *pgxpool.Pool
-	// LeaseTTL 默认 30s，须大于主备切换时长。
+	// LeaseTTL defaults to 30s and must exceed a primary failover. 0 selects
+	// the default; it cannot mean "no expiry", because a lease that never
+	// expires would keep a crashed holder's lock forever.
 	LeaseTTL time.Duration
-	// RenewInterval 默认 LeaseTTL/3。
+	// RenewInterval defaults to LeaseTTL/3. 0 selects the default; it cannot
+	// mean "never renew", because a lease must be renewed before LeaseTTL
+	// (New requires 0 < RenewInterval < LeaseTTL).
 	RenewInterval time.Duration
-	// PollInterval 默认 50ms，叠加最多一倍的随机抖动；只用于等待其他实例释放。
+	// PollInterval defaults to 50ms (plus up to the same again in jitter) and
+	// only paces waiting for another instance to release a lock. 0 selects the
+	// default; it cannot mean "unlimited", because a zero interval would
+	// busy-loop on the database.
 	PollInterval time.Duration
-	// OpTimeout 是获取租约、解锁、续约等内部操作的超时，默认 3s；写事务的 statement_timeout 也取此值。
+	// OpTimeout bounds internal operations (acquire, unlock, renew) and is also
+	// the statement_timeout of write transactions; the default is 3s. 0 selects
+	// the default; it cannot mean "no timeout", because an unbounded database
+	// call would stall lease renewal and shutdown.
 	OpTimeout time.Duration
-	// ExpiredGrace 是过期租约保留多久后被清理，默认 10*LeaseTTL。
+	// ExpiredGrace is how long an expired lease row is kept before cleanup; the
+	// default is 10*LeaseTTL. 0 selects the default; it cannot mean "keep
+	// forever" or "clean immediately", because the former leaks rows and the
+	// latter races a slow holder's renewal.
 	ExpiredGrace time.Duration
 	// Owner 写入租约行，仅用于诊断，默认 hostname:pid。
 	Owner string

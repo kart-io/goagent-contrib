@@ -249,8 +249,12 @@ func TestRestartAtEveryCommitBoundary(t *testing.T) {
 					require.NoError(t, err)
 				}
 				want := mg.Succeeded
-				if strings.HasPrefix(stage, "effect_after_apply") {
+				if stage == "effect_after_apply" {
 					want = mg.Attention
+				}
+				// goagent v0.60.0：效果已落地后被取消的任务不再停在 Attention，直接收敛为 canceled。
+				if stage == "effect_after_apply_cancel" {
+					want = mg.Canceled
 				}
 				if !assert.Eventually(t, func() bool {
 					current, e := f.s.GetTask(f.ctx, f.actor, task.ID)

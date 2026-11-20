@@ -7,6 +7,7 @@ import (
 	"github.com/kart-io/goagent/builder"
 	"github.com/kart-io/goagent/codec/json"
 	"github.com/kart-io/goagent/constants"
+	"github.com/kart-io/goagent/core/durable"
 	coreSession "github.com/kart-io/goagent/core/session"
 	agentErrors "github.com/kart-io/goagent/errors"
 	"github.com/kart-io/goagent/interfaces"
@@ -36,16 +37,24 @@ func (m persistentModel) CompleteToolsStream(ctx context.Context, r *llm.Complet
 	}
 	return m.scriptModel.CompleteToolsStream(ctx, r, ts)
 }
+
+// onceTool 声明有副作用：goagent v0.60.0 起默认策略的工具崩溃后会被重跑，只有 MaxAttempts 1 才交宿主核对。
+type onceTool struct{ *tools.BaseTool }
+
+func (onceTool) DurableOperationPolicy() durable.OperationPolicy {
+	return durable.OperationPolicy{MaxAttempts: 1}
+}
+
 func processFactory(pool *pgxpool.Pool, tenant string) mg.Factory {
 	return adapters.NativeFactory{Check: func(context.Context, mg.Version) error { return nil }, BuildAgent: func(ctx context.Context, v mg.Version, r mg.Resources, ap tools.Approver) (*builder.SimpleAgentBuilder, func(context.Context) error, error) {
 		reg := tools.NewRegistry()
-		e := reg.Register(tools.NewBaseTool("refund", "退款", `{"type":"object"}`, func(ctx context.Context, in *interfaces.ToolInput) (*interfaces.ToolOutput, error) {
+		e := reg.Register(onceTool{tools.NewBaseTool("refund", "退款", `{"type":"object"}`, func(ctx context.Context, in *interfaces.ToolInput) (*interfaces.ToolOutput, error) {
 			_, e := pool.Exec(ctx, `INSERT INTO mg_case_counters VALUES($1,'effect',1) ON CONFLICT(tenant,kind) DO UPDATE SET n=mg_case_counters.n+1`, tenant)
 			if e == nil && os.Getenv("MG_FAULT_STAGE") == "effect_after_apply" {
 				os.Exit(42)
 			}
 			return &interfaces.ToolOutput{Success: e == nil, Result: "退款完成"}, e
-		}))
+		})})
 		if e != nil {
 			return nil, nil, e
 		}

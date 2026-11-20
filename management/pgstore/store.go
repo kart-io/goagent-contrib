@@ -49,6 +49,9 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 				return err
 			}
 		}
+		if _, err := tx.Exec(ctx, reconciliationSchema); err != nil {
+			return err
+		}
 		for _, link := range []struct{ child, field, parent string }{{"versions", "agent_id", "agents"}, {"sessions", "agent_id", "agents"}, {"tasks", "session_id", "sessions"}, {"tasks", "agent_id", "agents"}, {"approvals", "task_id", "tasks"}, {"attempts", "task_id", "tasks"}} {
 			name := "mg_" + link.child
 			col := link.field

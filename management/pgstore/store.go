@@ -49,6 +49,9 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 				return err
 			}
 		}
+		if _, err := tx.Exec(ctx, reconciliationSchema); err != nil {
+			return err
+		}
 		for _, link := range []struct{ child, field, parent string }{{"versions", "agent_id", "agents"}, {"sessions", "agent_id", "agents"}, {"tasks", "session_id", "sessions"}, {"tasks", "agent_id", "agents"}, {"approvals", "task_id", "tasks"}, {"attempts", "task_id", "tasks"}} {
 			name := "mg_" + link.child
 			col := link.field
@@ -165,7 +168,38 @@ func (t transaction) Delete(ctx context.Context, kind, tenant, id string, rev in
 	}
 	return err
 }
+
+// scanPage is the internal page size for unlimited scans; each page is a
+// separate short query keyed on (created_at,id), so no single read is unbounded.
+const scanPage = 1000
+
+// List returns every matching row when Query.Limit is 0 and exactly Limit
+// rows otherwise; a negative Limit is invalid.
 func (t transaction) List(ctx context.Context, kind string, sel mg.Selection) ([]mg.Document, error) {
+	if sel.Query.Limit < 0 {
+		return nil, agentErrors.ErrManagementInvalid
+	}
+	if sel.Query.Limit > 0 {
+		return t.listPage(ctx, kind, sel, sel.Query.Limit)
+	}
+	var out []mg.Document
+	for {
+		page, err := t.listPage(ctx, kind, sel, scanPage)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, page...)
+		if len(page) < scanPage {
+			if out == nil {
+				out = []mg.Document{}
+			}
+			return out, nil
+		}
+		last := page[len(page)-1]
+		sel.Query.Cursor = last.CreatedAt.UTC().Format(time.RFC3339Nano) + "|" + last.ID
+	}
+}
+func (t transaction) listPage(ctx context.Context, kind string, sel mg.Selection, limit int) ([]mg.Document, error) {
 	tbl, err := table(kind)
 	if err != nil {
 		return nil, err
@@ -226,13 +260,6 @@ func (t transaction) List(ctx context.Context, kind string, sel mg.Selection) ([
 		}
 		where = append(where, "("+strings.Join(vis, " OR ")+")")
 	}
-	limit := q.Limit
-	if limit <= 0 {
-		limit = 201
-	}
-	if limit > 10001 {
-		return nil, agentErrors.ErrManagementInvalid
-	}
 	rows, err := t.db.Query(ctx, `SELECT tenant_id,id,revision,created_at,data FROM `+tbl+` WHERE `+strings.Join(where, " AND ")+` ORDER BY created_at,id LIMIT `+add(limit), args...)
 	if err != nil {
 		return nil, err
@@ -249,12 +276,27 @@ func (t transaction) List(ctx context.Context, kind string, sel mg.Selection) ([
 	return out, rows.Err()
 }
 
-// History 在存储侧限制读取量，不加载整段历史后切片。
+// History returns every matching event after seq when limit is 0, read in
+// seq-ordered pages of scanPage; a positive limit is exact and a negative one is invalid.
 func (s *Store) History(ctx context.Context, id string, after int64, limit int, types []string) (mg.HistoryPage, error) {
 	out := mg.HistoryPage{NextSeq: after}
-	if limit < 1 || limit > 200 {
+	if limit < 0 {
 		return out, agentErrors.ErrManagementInvalid
 	}
+	if limit > 0 {
+		return s.historyPage(ctx, id, after, limit, types)
+	}
+	for {
+		page, err := s.historyPage(ctx, id, out.NextSeq, scanPage, types)
+		out.Items = append(out.Items, page.Items...)
+		out.NextSeq = page.NextSeq
+		if err != nil || len(page.Items) < scanPage {
+			return out, err
+		}
+	}
+}
+func (s *Store) historyPage(ctx context.Context, id string, after int64, limit int, types []string) (mg.HistoryPage, error) {
+	out := mg.HistoryPage{NextSeq: after}
 	rows, err := s.pool.Query(ctx, `SELECT seq,event FROM goagent_session_event WHERE session_id=$1 AND seq>$2 AND type<>$5 AND type NOT LIKE 'management/%' AND (COALESCE(cardinality($4::text[]),0)=0 OR type=ANY($4::text[])) ORDER BY seq LIMIT $3`, id, after, limit, types, constants.SessionEventBoundarySnapshot)
 	if err != nil {
 		return out, err

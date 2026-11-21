@@ -4,7 +4,7 @@
 
 | 保留目录 | 职责 |
 | --- | --- |
-| `pgstore` | management.Store 与 HistoryReader 的 PostgreSQL 实现 |
+| `pgstore` | management.Store、HistoryReader 与 ReconciliationReader 的 PostgreSQL 实现；`Migrate` 同时建 `mg_reconciliations`（不改 `mg_schema` 版本），`RecordReconciliation` 写入宿主核对证据；`List`/`History` 的 limit 为 0 表示不限，不再有 200/10001 上限 |
 | `integration` | 真实数据库、HTTP、审批、进程恢复与并发集成测试 |
 | `examples/host` | 离线退款 Agent 的可运行宿主，默认8组、扩展20组HTTP黑盒案例 |
 | `harness` | 可选独立模块，对接 background 和 effects |

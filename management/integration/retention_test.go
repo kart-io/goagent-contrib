@@ -95,6 +95,7 @@ func TestRetentionKeepsLiveKeysAndUnconfirmedDependencies(t *testing.T) {
 
 func TestInvalidRetentionAndTypedNilTracerAreRejected(t *testing.T) {
 	f := setup(t, nil)
+	// 0 = 永不清理（goagent v0.60.0 起为限额类语义），负数与 typed nil 仍被拒绝。
 	for _, name := range []string{"task_zero", "task_negative", "audit_zero", "audit_negative", "nil_tracer"} {
 		t.Run(name, func(t *testing.T) {
 			cfg := f.cfg
@@ -113,6 +114,10 @@ func TestInvalidRetentionAndTypedNilTracerAreRejected(t *testing.T) {
 				cfg.Tracer = tracer
 			}
 			_, err := mg.New(cfg)
+			if name == "task_zero" || name == "audit_zero" {
+				require.NoError(t, err)
+				return
+			}
 			require.ErrorIs(t, err, agentErrors.ErrManagementInvalid)
 		})
 	}

@@ -3,7 +3,7 @@ module github.com/kart-io/goagent-contrib/retrieval
 go 1.27.0
 
 require (
-	github.com/kart-io/goagent v0.53.0
+	github.com/kart-io/goagent v0.60.1
 	github.com/sashabaranov/go-openai v1.41.2
 	github.com/stretchr/testify v1.12.1
 )

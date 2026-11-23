@@ -97,7 +97,7 @@ func setup(t *testing.T, factories map[string]mg.Factory) *fixture {
 	if factories == nil {
 		factories = map[string]mg.Factory{"test": factory{}}
 	}
-	cfg := mg.Config{Store: store, Sessions: sessions, HistoryReader: store, Authorizer: mg.TenantAuthorizer{}, Factories: factories, Limits: mg.DefaultLimits()}
+	cfg := mg.Config{Store: store, Sessions: sessions, HistoryReader: store, Authorizer: mg.TenantAuthorizer{}, Factories: factories, Limits: mg.DefaultLimits(), DefaultTaskBudget: mg.TaskBudget{MaxModelRequests: 100, MaxToolCalls: 1000, MaxAgentCalls: 1000, Timeout: 24 * time.Hour}}
 	s, err := mg.New(cfg)
 	require.NoError(t, err)
 	return &fixture{schema, cfg, ctx, s, store, pool, mg.Actor{TenantID: uuid.NewString(), Subject: "验收操作人"}}

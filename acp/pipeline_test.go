@@ -145,7 +145,7 @@ func TestSessionIDMismatch(t *testing.T) {
 		if err != nil {
 			return nil, err
 		}
-		agent, err := builder.NewSimpleBuilder(newModel(calls("lookup"))).WithSessionID("other").WithTools(d.Tools()...).Build()
+		agent, err := builder.NewSimpleBuilder(newModel(calls("lookup"))).WithSessionID("other").WithTools(d.Tools()...).WithMaxIterations(4).Build()
 		if err != nil {
 			return nil, err
 		}

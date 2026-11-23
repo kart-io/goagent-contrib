@@ -150,7 +150,7 @@ func run() (runErr error) {
 	if err != nil {
 		return err
 	}
-	service, err := mg.New(mg.Config{Store: store, Sessions: sessions, HistoryReader: store, Authorizer: mg.TenantAuthorizer{}, Factories: map[string]mg.Factory{"refund": factory(pool)}, Report: func(stage string, err error) { fmt.Fprintln(os.Stderr, "宿主诊断：", stage, err) }})
+	service, err := mg.New(mg.Config{Store: store, Sessions: sessions, HistoryReader: store, Authorizer: mg.TenantAuthorizer{}, Factories: map[string]mg.Factory{"refund": factory(pool)}, Limits: mg.DefaultLimits(), DefaultTaskBudget: mg.TaskBudget{MaxModelRequests: 100, MaxToolCalls: 1000, MaxAgentCalls: 1000, Timeout: 24 * time.Hour}, Report: func(stage string, err error) { fmt.Fprintln(os.Stderr, "宿主诊断：", stage, err) }})
 	if err != nil {
 		return err
 	}

@@ -55,12 +55,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 全部模块与同一份核心源码联调：固定为 v0.60.0，management 的 storetest 自该版本起可用；cache/redis、memory/pgvector 依赖其中的 cache.Bytes 与 memorytest。
+      # 全部模块与同一份核心源码联调：固定为 v0.60.1，management 的 storetest 自 v0.60.0 起可用；cache/redis、memory/pgvector 依赖其中的 cache.Bytes 与 memorytest。
       - name: Checkout management core
         uses: actions/checkout@v4
         with:
           repository: kart-io/goagent
-          ref: 2449c0d3a92dd57c640dac9500e127b8801bc9d5
+          ref: 93de65aad438cfd3a2dc237d0a76aab1a72acc74
           path: .goagent-core
 
       - uses: actions/setup-go@v5

@@ -4,7 +4,7 @@ go 1.27.0
 
 require (
 	github.com/jackc/pgx/v5 v5.10.0
-	github.com/kart-io/goagent v0.54.0
+	github.com/kart-io/goagent v0.60.1
 	github.com/pgvector/pgvector-go v0.4.1
 	github.com/stretchr/testify v1.12.1
 )

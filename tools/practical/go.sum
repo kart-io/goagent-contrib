@@ -12,8 +12,8 @@ github.com/gofrs/flock v0.13.0/go.mod h1:jxeyy9R1auM5S6JYDBhDt+E2TCo7DkratH4Pgi8
 github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
-github.com/kart-io/goagent v0.53.0 h1:wSw+iai52mXc2G4DhkitlN3V3DPdy22XqXJZieLdpe4=
-github.com/kart-io/goagent v0.53.0/go.mod h1:Dggqm3/NiU1UWvjGJYZNyU+nhwib+StwILkVRvV0ZUo=
+github.com/kart-io/goagent v0.60.1 h1:yiub7ysaNT6gKKV7A0kypONDxHKdKeo8A/8Ncl8v3qo=
+github.com/kart-io/goagent v0.60.1/go.mod h1:Dggqm3/NiU1UWvjGJYZNyU+nhwib+StwILkVRvV0ZUo=
 github.com/kr/pretty v0.2.1/go.mod h1:ipq/a2n7PKx3OHsz4KJII5eveXtPO4qwEXGdVfWzfnI=
 github.com/kr/pretty v0.3.1 h1:flRD4NNwYAUpkphVc1HcthR4KEIFJ65n8Mw5qdRn3LE=
 github.com/kr/pretty v0.3.1/go.mod h1:hoEshYVHaxMs3cyo3Yncou5ZscifuDolrwPKZanG3xk=

@@ -8,8 +8,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	durablepg "github.com/kart-io/goagent-contrib/durable/pgstore"
 	"github.com/kart-io/goagent/codec/json"
 	"github.com/kart-io/goagent/constants"
+	"github.com/kart-io/goagent/core/session"
 	agentErrors "github.com/kart-io/goagent/errors"
 	mg "github.com/kart-io/goagent/management"
 	"strings"
@@ -196,7 +198,7 @@ func (t transaction) List(ctx context.Context, kind string, sel mg.Selection) ([
 			return out, nil
 		}
 		last := page[len(page)-1]
-		sel.Query.Cursor = last.CreatedAt.UTC().Format(time.RFC3339Nano) + "|" + last.ID
+		sel.Query.Cursor = mg.FormatCursor(last.CreatedAt, last.ID)
 	}
 }
 func (t transaction) listPage(ctx context.Context, kind string, sel mg.Selection, limit int) ([]mg.Document, error) {
@@ -228,15 +230,11 @@ func (t transaction) listPage(ctx context.Context, kind string, sel mg.Selection
 		where = append(where, "created_at<="+add(q.CreatedTo))
 	}
 	if q.Cursor != "" {
-		parts := strings.SplitN(q.Cursor, "|", 2)
-		if len(parts) != 2 {
-			return nil, agentErrors.ErrManagementInvalid
+		at, id, err := mg.ParseCursor(q.Cursor)
+		if err != nil {
+			return nil, err
 		}
-		at, e := time.Parse(time.RFC3339Nano, parts[0])
-		if e != nil {
-			return nil, agentErrors.ErrManagementInvalid
-		}
-		where = append(where, "(created_at,id)>("+add(at)+","+add(parts[1])+")")
+		where = append(where, "(created_at,id)>("+add(at)+","+add(id)+")")
 	}
 	v := sel.Visibility
 	if !v.All {
@@ -276,49 +274,42 @@ func (t transaction) listPage(ctx context.Context, kind string, sel mg.Selection
 	return out, rows.Err()
 }
 
-// History returns every matching event after seq when limit is 0, read in
-// seq-ordered pages of scanPage; a positive limit is exact and a negative one is invalid.
+// History implements management.HistoryReader. The type filter and the page
+// size are applied by the database; the page is assembled by
+// management.FilterHistory so it has the same shape as every other reader.
+// Unlimited reads go through seq-ordered pages of scanPage.
 func (s *Store) History(ctx context.Context, id string, after int64, limit int, types []string) (mg.HistoryPage, error) {
-	out := mg.HistoryPage{NextSeq: after}
+	empty := mg.HistoryPage{Items: []session.Event{}, NextSeq: after}
 	if limit < 0 {
-		return out, agentErrors.ErrManagementInvalid
+		return empty, agentErrors.ErrManagementInvalid
 	}
-	if limit > 0 {
-		return s.historyPage(ctx, id, after, limit, types)
+	size := limit
+	if limit == 0 {
+		size = scanPage
 	}
+	filter := durablepg.EventFilter{Types: types, ExcludeTypes: []string{constants.SessionEventBoundarySnapshot}, ExcludePrefix: mg.HistoryHiddenPrefix}
+	var events []session.Event
+	next := after
 	for {
-		page, err := s.historyPage(ctx, id, out.NextSeq, scanPage, types)
-		out.Items = append(out.Items, page.Items...)
-		out.NextSeq = page.NextSeq
-		if err != nil || len(page.Items) < scanPage {
-			return out, err
+		rows, err := durablepg.ReadEventPage(ctx, s.pool, id, next, size, filter)
+		if err != nil {
+			return empty, err
+		}
+		for _, row := range rows {
+			var ev struct {
+				Seq  int64           `json:"seq"`
+				Type string          `json:"type"`
+				Time time.Time       `json:"time"`
+				Data json.RawMessage `json:"data"`
+			}
+			if err = json.Unmarshal(row.Event, &ev); err != nil {
+				return empty, err
+			}
+			events = append(events, session.Event{Seq: ev.Seq, Type: ev.Type, Time: ev.Time, Data: ev.Data})
+			next = row.Seq
+		}
+		if limit > 0 || len(rows) < size {
+			return mg.FilterHistory(events, after, limit, types)
 		}
 	}
-}
-func (s *Store) historyPage(ctx context.Context, id string, after int64, limit int, types []string) (mg.HistoryPage, error) {
-	out := mg.HistoryPage{NextSeq: after}
-	rows, err := s.pool.Query(ctx, `SELECT seq,event FROM goagent_session_event WHERE session_id=$1 AND seq>$2 AND type<>$5 AND type NOT LIKE 'management/%' AND (COALESCE(cardinality($4::text[]),0)=0 OR type=ANY($4::text[])) ORDER BY seq LIMIT $3`, id, after, limit, types, constants.SessionEventBoundarySnapshot)
-	if err != nil {
-		return out, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var raw []byte
-		var seq int64
-		if err = rows.Scan(&seq, &raw); err != nil {
-			return out, err
-		}
-		var ev struct {
-			Seq  int64           `json:"seq"`
-			Type string          `json:"type"`
-			Time time.Time       `json:"time"`
-			Data json.RawMessage `json:"data"`
-		}
-		if err = json.Unmarshal(raw, &ev); err != nil {
-			return out, err
-		}
-		out.Items = append(out.Items, sessionEvent(ev.Seq, ev.Type, ev.Time, ev.Data))
-		out.NextSeq = seq
-	}
-	return out, rows.Err()
 }

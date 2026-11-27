@@ -36,8 +36,8 @@ github.com/gorilla/websocket v1.5.3 h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aN
 github.com/gorilla/websocket v1.5.3/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
 github.com/invopop/jsonschema v0.14.0 h1:MHQqLhvpNUZfw+hM3AZDYK7jxO8FZoQeQM77g8iyZjg=
 github.com/invopop/jsonschema v0.14.0/go.mod h1:ygm6C2EaVNMBDPpaPlnOA2pFAxBnxGjFlMZABxm9n2I=
-github.com/kart-io/goagent v0.66.0 h1:abXwy2J5JNMm0wbHyTpxQihFxLfJxecenmCPZyBsDQk=
-github.com/kart-io/goagent v0.66.0/go.mod h1:OKGFIijF5em3sG9SqAevyhl13nbO44hJ2WKzWg4fT68=
+github.com/kart-io/goagent v0.67.0 h1:x2myS3nZZpfWblyBeft5FFX5EsNQgUr3O0mZeIdA+Uw=
+github.com/kart-io/goagent v0.67.0/go.mod h1:OKGFIijF5em3sG9SqAevyhl13nbO44hJ2WKzWg4fT68=
 github.com/kart-io/goagent-contrib/retrieval v0.4.1-0.20261107151427-7637a02d2a30 h1:LHBwA04yEhRG1HWeU08hTEkd/BV3KQRk0mP1EFv+XyQ=
 github.com/kart-io/goagent-contrib/retrieval v0.4.1-0.20261107151427-7637a02d2a30/go.mod h1:DxRhpY/FFntnmU060g/6tmUvlAQ6WksJqZu0aIJVYMM=
 github.com/pb33f/ordered-map/v2 v2.3.1 h1:5319HDO0aw4DA4gzi+zv4FXU9UlSs3xGZ40wcP1nBjY=

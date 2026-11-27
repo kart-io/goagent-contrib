@@ -27,3 +27,5 @@ Lock 的获取尝试同时受调用方 context 和 `OpTimeout` 限制，连接�
 - 执行：由宿主纳入迁移流程，执行前设置 `lock_timeout`，避免排在长事务之后阻塞业务。
 - 回滚：执行 `SnapshotCompressionPGLZ`，同样只影响之后写入的值。
 - 验证：`TestSnapshotCompressionTuning` 覆盖迁移前、迁移后、回滚后三种值的读写。
+
+`ReadEventPage(ctx, pool, id, after, limit, EventFilter)` 是只读的分页读取：按 seq 升序返回 seq > after 的事件原文，类型筛选（指定类型、排除类型、排除前缀）和 limit 都在数据库侧完成，不经过租约。需要在数据库侧筛选会话事件的模块（例如 `management/pgstore` 的业务历史）调用它，不自己写本包的表名。

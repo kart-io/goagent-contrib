@@ -3,12 +3,9 @@ package pgstore
 import (
 	"context"
 	"errors"
-	"slices"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/kart-io/goagent/codec/json"
-	"github.com/kart-io/goagent/core/durable"
 	agentErrors "github.com/kart-io/goagent/errors"
 	mg "github.com/kart-io/goagent/management"
 )
@@ -28,33 +25,12 @@ verified_at timestamptz NOT NULL,
 operation_refs jsonb NOT NULL,
 PRIMARY KEY(tenant_id,id))`
 
-// normalized brings a record to what the table can represent: UTC at
-// microsecond precision and a non-nil operation list, so a retry of the same
-// record compares equal to what was stored.
-func normalized(r mg.Reconciliation) mg.Reconciliation {
-	r.VerifiedAt = r.VerifiedAt.UTC().Truncate(time.Microsecond)
-	if r.OperationRefs == nil {
-		r.OperationRefs = []durable.OperationRef{}
-	}
-	return r
-}
-
-func sameReconciliation(a, b mg.Reconciliation) bool {
-	a, b = normalized(a), normalized(b)
-	return a.ID == b.ID && a.TenantID == b.TenantID && a.TaskID == b.TaskID && a.VersionHash == b.VersionHash &&
-		a.EvidenceHash == b.EvidenceHash && a.Resolution == b.Resolution && a.VerifiedBy == b.VerifiedBy &&
-		a.VerifiedAt.Equal(b.VerifiedAt) && slices.Equal(a.OperationRefs, b.OperationRefs)
-}
-
-// RecordReconciliation stores host-verified evidence for a task in attention.
-// Recording the same ID with identical content again is a no-op; the same ID
-// with different content returns ErrManagementConflict and leaves the stored
-// record untouched. IDs are scoped by tenant.
+// RecordReconciliation implements management.ReconciliationStore.
 func (s *Store) RecordReconciliation(ctx context.Context, r mg.Reconciliation) error {
 	if r.ID == "" || r.TenantID == "" {
 		return agentErrors.ErrManagementInvalid
 	}
-	r = normalized(r)
+	r = mg.NormalizeReconciliation(r)
 	refs, err := json.Marshal(r.OperationRefs)
 	if err != nil {
 		return err
@@ -68,7 +44,7 @@ func (s *Store) RecordReconciliation(ctx context.Context, r mg.Reconciliation) e
 	if err != nil {
 		return err
 	}
-	if !sameReconciliation(stored, r) {
+	if !mg.SameReconciliation(stored, r) {
 		return agentErrors.ErrManagementConflict
 	}
 	return nil
@@ -86,7 +62,10 @@ func (s *Store) Lookup(ctx context.Context, a mg.Actor, id string) (r mg.Reconci
 	if err != nil {
 		return mg.Reconciliation{}, err
 	}
-	r.VerifiedAt = r.VerifiedAt.UTC()
-	err = json.Unmarshal(refs, &r.OperationRefs)
-	return
+	if err = json.Unmarshal(refs, &r.OperationRefs); err != nil {
+		return mg.Reconciliation{}, err
+	}
+	return mg.NormalizeReconciliation(r), nil
 }
+
+var _ mg.ReconciliationStore = (*Store)(nil)

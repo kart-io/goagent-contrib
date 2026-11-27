@@ -21,6 +21,7 @@ jobs:
           - cache/redis
           - document
           - document/pdf
+          - durable/gormstore
           - durable/pgstore
           - httpagent
           - management
@@ -33,7 +34,7 @@ jobs:
           - retrieval/vertexai
           - tools/database
           - tools/practical
-    # pgstore 和 management 使用真实数据库；每个矩阵任务独享服务容器。
+    # pgstore、gormstore 和 management 使用真实数据库；每个矩阵任务独享服务容器。
     # cache/redis、memory/pgvector 与 memory/qdrant 在 CI 中没有 Redis、pgvector、Qdrant 服务，外部服务测试跳过，只覆盖编译、vet 与 lint。
     services:
       postgres:
@@ -47,8 +48,22 @@ jobs:
           --health-interval 2s
           --health-timeout 5s
           --health-retries 15
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: test
+        ports:
+          - 3306:3306
+        options: >-
+          --tmpfs /var/lib/mysql
+          --health-cmd "mysqladmin ping -ptest --silent"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 60
     env:
       GOAGENT_PGSTORE_DSN: postgres://postgres:test@127.0.0.1:5432/postgres?sslmode=disable
+      GOAGENT_GORMSTORE_PG_DSN: postgres://postgres:test@127.0.0.1:5432/postgres?sslmode=disable
+      GOAGENT_GORMSTORE_MYSQL_DSN: root:test@tcp(127.0.0.1:3306)/mysql
     defaults:
       run:
         working-directory: ${{ matrix.module }}

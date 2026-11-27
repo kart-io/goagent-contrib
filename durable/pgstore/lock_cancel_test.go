@@ -16,53 +16,27 @@ import (
 	agentErrors "github.com/kart-io/goagent/errors"
 )
 
-// 不启动续约，确保并发时序仅由测试中的事务决定。
-func newIdleStore(pool *pgxpool.Pool) *Store {
-	return &Store{cfg: Config{Pool: pool, OpTimeout: 5 * time.Second, LeaseTTL: time.Minute},
-		gates: map[string]*gate{}, owners: map[string]*hold{}}
+// 续约间隔远长于用例，并发时序仅由测试中的事务决定。
+func newIdleStore(t *testing.T, pool *pgxpool.Pool) *Store {
+	t.Helper()
+	s, err := New(context.Background(), Config{Pool: pool, OpTimeout: 5 * time.Second, LeaseTTL: time.Minute})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = s.Close(ctx)
+	})
+	return s
 }
 
-func requireNoLockState(t *testing.T, s *Store, pool *pgxpool.Pool) {
+// 进程内的闸门与持有者登记由 leasestore 自己的测试覆盖，这里只看数据库。
+func requireNoLockState(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
-	s.mu.Lock()
-	owners, gates := len(s.owners), len(s.gates)
-	s.mu.Unlock()
-	require.Zero(t, owners, "取消后不能登记持有者")
-	require.Zero(t, gates, "取消后必须释放本地闸门")
-	done := make(chan struct{})
-	go func() { s.holders.Wait(); close(done) }()
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("取消后仍有未完成的持有者计数")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	var n int
 	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM goagent_durable_lease`).Scan(&n))
 	require.Zero(t, n, "取消后不能残留自己的租约")
-}
-
-// 不提供 Pool：已结束的调用方不能开始数据库尝试，即使 gate 可立即获取。
-func TestLockAlreadyCancelled(t *testing.T) {
-	for _, expired := range []bool{false, true} {
-		ctx, cancel := context.WithCancel(context.Background())
-		wantErr := context.Canceled
-		if expired {
-			cancel()
-			ctx, cancel = context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
-			wantErr = context.DeadlineExceeded
-		}
-		cancel()
-		s := newIdleStore(nil)
-		unlock, err := s.Lock(ctx, "run")
-		require.Nil(t, unlock)
-		require.ErrorIs(t, err, agentErrors.ErrLockUnavailable)
-		require.ErrorIs(t, err, wantErr)
-		require.Empty(t, s.owners)
-		require.Empty(t, s.gates)
-		s.holders.Wait()
-	}
 }
 
 func TestLockCancellationDuringAdvisoryWait(t *testing.T) {
@@ -75,7 +49,7 @@ func TestLockCancellationDuringAdvisoryWait(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				dsn, schema := newSchema(t)
 				pool := newPool(t, dsn, schema)
-				s := newIdleStore(pool)
+				s := newIdleStore(t, pool)
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				defer cancel()
 				tx, err := pool.Begin(ctx)
@@ -122,12 +96,12 @@ func TestLockCancellationDuringAdvisoryWait(t *testing.T) {
 				require.ErrorIs(t, lockErr, agentErrors.ErrLockUnavailable)
 				require.ErrorIs(t, lockErr, wantErr)
 				require.NoError(t, tx.Commit(ctx))
-				requireNoLockState(t, s, pool)
+				requireNoLockState(t, pool)
 				// 同一个 Store 可以立即重试，无本地 gate 或数据库租约残留。
 				retry, err := view.Lock(ctx, "run")
 				require.NoError(t, err)
 				require.NoError(t, retry())
-				requireNoLockState(t, s, pool)
+				requireNoLockState(t, pool)
 			})
 		}
 	}
@@ -180,7 +154,7 @@ func TestLockCancelledAfterCommit(t *testing.T) {
 			pool, err := pgxpool.NewWithConfig(context.Background(), cfg)
 			require.NoError(t, err)
 			t.Cleanup(pool.Close)
-			s := newIdleStore(pool)
+			s := newIdleStore(t, pool)
 			unlock, err := s.Lock(caller, "run")
 			if unlock != nil {
 				defer unlock()
@@ -190,7 +164,7 @@ func TestLockCancelledAfterCommit(t *testing.T) {
 			require.ErrorIs(t, err, agentErrors.ErrLockUnavailable)
 			require.ErrorIs(t, err, context.Canceled)
 			require.False(t, armed.Load(), "故障必须发生在发出 COMMIT 后")
-			requireNoLockState(t, s, observer)
+			requireNoLockState(t, observer)
 		})
 	}
 }

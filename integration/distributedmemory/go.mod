@@ -4,7 +4,7 @@ go 1.27.0
 
 require (
 	github.com/jackc/pgx/v5 v5.10.0
-	github.com/kart-io/goagent v0.65.0
+	github.com/kart-io/goagent v0.66.0
 	github.com/kart-io/goagent-contrib/cache/redis v0.0.0-00010101000000-000000000000
 	github.com/kart-io/goagent-contrib/durable/pgstore v0.5.1-0.20261107151427-7637a02d2a30
 	github.com/kart-io/goagent-contrib/memory/pgvector v0.0.0-00010101000000-000000000000

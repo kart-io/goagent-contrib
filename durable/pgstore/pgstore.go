@@ -1,5 +1,8 @@
 // Package pgstore 是基于 Postgres 的 durable.Store、durable.Scoped 与 session.Store（SessionStore）实现，供多个实例共享持久运行与会话日志。
 //
+// 租约、进程内闸门与续约由 goagent 的 core/durable/leasestore 实现，本包只提供它的 PostgreSQL 后端（backend.go），
+// 表结构固定为 Schema。要用自己的表、ORM 或其他数据库时，在自己的仓库实现 leasestore.Backend，不修改本包。
+//
 // 锁实现为带过期时间的租约：后台批量续约，持有者崩溃后租约在 LeaseTTL 后过期，其他实例即可接管。
 // 每次写入在同一事务内校验租约令牌，被接管后的旧持有者写入返回 durable.ErrLeaseLost。
 // 同一进程内每个 ID 另有一道闸门，持有到该持有者解锁为止，旧持有者不会借用新持有者的令牌。
@@ -14,26 +17,16 @@ package pgstore
 
 import (
 	"context"
-	crand "crypto/rand"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"math/rand/v2"
-	"os"
-	"slices"
-	"strings"
-	"sync"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/kart-io/goagent/core/durable"
-	agentErrors "github.com/kart-io/goagent/errors"
+	"github.com/kart-io/goagent/core/durable/leasestore"
 )
 
 // ErrClosed 表示 Store 已关闭，不再接受新的 Lock。
-var ErrClosed = errors.New("pgstore 已关闭")
+var ErrClosed = leasestore.ErrClosed
 
 // Config 配置 Store。时长为 0 时使用默认值。
 type Config struct {
@@ -72,34 +65,10 @@ type Config struct {
 
 // Store 实现 durable.Store 与 durable.Scoped。
 type Store struct {
-	cfg Config
-
-	mu      sync.Mutex
-	closed  bool
-	gates   map[string]*gate
-	owners  map[string]*hold
-	holders sync.WaitGroup
-
-	stop      chan struct{}
-	renewDone chan struct{}
+	*leasestore.Store
+	cfg     Config
+	backend *backend
 }
-
-// gate 是进程内某个 (ns, id) 的闸门，refs 计数等待者与持有者，归零时从表中删除。
-type gate struct {
-	sem  chan struct{}
-	refs int
-}
-
-// hold 是本进程持有的一个租约；renew 由 mu 保护，置 false 后不再续约。
-type hold struct {
-	ns, id, token string
-	renew         bool
-}
-
-var (
-	_ durable.Store  = (*Store)(nil)
-	_ durable.Scoped = (*Store)(nil)
-)
 
 // New 校验表结构版本并启动后台续约。
 func New(ctx context.Context, cfg Config) (*Store, error) {
@@ -109,27 +78,8 @@ func New(ctx context.Context, cfg Config) (*Store, error) {
 	if cfg.RenewPool == nil {
 		cfg.RenewPool = cfg.Pool
 	}
-	if cfg.LeaseTTL == 0 {
-		cfg.LeaseTTL = 30 * time.Second
-	}
-	if cfg.RenewInterval == 0 {
-		cfg.RenewInterval = cfg.LeaseTTL / 3
-	}
-	if cfg.PollInterval == 0 {
-		cfg.PollInterval = 50 * time.Millisecond
-	}
 	if cfg.OpTimeout == 0 {
 		cfg.OpTimeout = 3 * time.Second
-	}
-	if cfg.ExpiredGrace == 0 {
-		cfg.ExpiredGrace = 10 * cfg.LeaseTTL
-	}
-	if cfg.LeaseTTL < 0 || cfg.RenewInterval <= 0 || cfg.RenewInterval >= cfg.LeaseTTL || cfg.PollInterval < 0 || cfg.OpTimeout < 0 || cfg.ExpiredGrace < 0 {
-		return nil, fmt.Errorf("pgstore 配置无效：须满足 0 < RenewInterval < LeaseTTL，其余时长非负")
-	}
-	if cfg.Owner == "" {
-		host, _ := os.Hostname()
-		cfg.Owner = fmt.Sprintf("%s:%d", host, os.Getpid())
 	}
 	var version int
 	if err := cfg.Pool.QueryRow(ctx, `SELECT version FROM goagent_durable_schema`).Scan(&version); err != nil {
@@ -138,408 +88,20 @@ func New(ctx context.Context, cfg Config) (*Store, error) {
 	if version != SchemaVersion {
 		return nil, fmt.Errorf("pgstore 表结构版本为 %d，需要 %d", version, SchemaVersion)
 	}
-	s := &Store{cfg: cfg, gates: map[string]*gate{}, owners: map[string]*hold{}, stop: make(chan struct{}), renewDone: make(chan struct{})}
-	go s.background()
-	return s, nil
-}
-
-func key(ns, id string) string { return ns + "\x00" + id }
-
-// scopeNS 给作用域名加前缀，与根命名空间 "" 区分。
-func scopeNS(name string) string { return "s:" + name }
-
-func (s *Store) report(op string, err error) {
-	if err != nil && s.cfg.OnError != nil {
-		s.cfg.OnError(op, err)
-	}
-}
-
-func (s *Store) opContext() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.Background(), s.cfg.OpTimeout)
-}
-
-func lockUnavailable(ctx context.Context) error {
-	return fmt.Errorf("%w: %w", agentErrors.ErrLockUnavailable, ctx.Err())
-}
-
-// Lock 实现 durable.Store。
-func (s *Store) Lock(ctx context.Context, id string) (func() error, error) {
-	return s.lock(ctx, "", id)
-}
-
-// Load 实现 durable.Store。
-func (s *Store) Load(ctx context.Context, id string) (*durable.Snapshot, error) {
-	return s.load(ctx, "", id)
-}
-
-// Save 实现 durable.Store。
-func (s *Store) Save(ctx context.Context, id string, snap *durable.Snapshot) error {
-	return s.save(ctx, "", id, snap)
-}
-
-// SaveAll 在一个同步提交事务中校验全部租约并保存全部快照。
-func (s *Store) SaveAll(ctx context.Context, writes ...durable.Write) error {
-	return s.saveAll(ctx, "", writes)
-}
-
-func (s *Store) enterGate(k string) *gate {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	g := s.gates[k]
-	if g == nil {
-		g = &gate{sem: make(chan struct{}, 1)}
-		s.gates[k] = g
-	}
-	g.refs++
-	return g
-}
-
-func (s *Store) leaveGate(k string, g *gate, held bool) {
-	if held {
-		<-g.sem
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if g.refs--; g.refs == 0 {
-		delete(s.gates, k)
-	}
-}
-
-func (s *Store) lock(ctx context.Context, ns, id string) (func() error, error) {
-	s.mu.Lock()
-	closed := s.closed
-	if !closed {
-		s.holders.Add(1)
-	}
-	s.mu.Unlock()
-	if closed {
-		return nil, ErrClosed
-	}
-	unlock, err := s.acquire(ctx, ns, id)
-	if err != nil {
-		s.holders.Done()
-	}
-	return unlock, err
-}
-
-func (s *Store) acquire(ctx context.Context, ns, id string) (func() error, error) {
-	k := key(ns, id)
-	g := s.enterGate(k)
-	select {
-	case g.sem <- struct{}{}:
-	case <-ctx.Done():
-		s.leaveGate(k, g, false)
-		return nil, lockUnavailable(ctx)
-	}
-	for {
-		if ctx.Err() != nil {
-			s.leaveGate(k, g, true)
-			return nil, lockUnavailable(ctx)
-		}
-		token := crand.Text()
-		ok, err := s.tryAcquire(ctx, ns, id, token)
-		if err != nil {
-			s.leaveGate(k, g, true)
-			if ctx.Err() != nil {
-				return nil, lockUnavailable(ctx)
-			}
-			return nil, err
-		}
-		if ok {
-			h := &hold{ns: ns, id: id, token: token, renew: true}
-			s.mu.Lock()
-			if ctx.Err() != nil {
-				s.mu.Unlock()
-				// 已提交但尚未交给调用方，按自身 token 清理，不能登记为活跃持有者。
-				s.deleteLease(ns, id, token)
-				s.leaveGate(k, g, true)
-				return nil, lockUnavailable(ctx)
-			}
-			s.owners[k] = h
-			s.mu.Unlock()
-			return s.unlocker(k, g, h), nil
-		}
-		wait := s.cfg.PollInterval + rand.N(s.cfg.PollInterval+1)
-		select {
-		case <-time.After(wait):
-		case <-ctx.Done():
-			s.leaveGate(k, g, true)
-			return nil, lockUnavailable(ctx)
-		}
-	}
-}
-
-// tryAcquire 的等待与写入响应调用方取消，同时受 OpTimeout 限制。
-// 一旦尝试写入，错误可能意味着 INSERT/COMMIT 结果不确定，须用独立期限补偿。
-func (s *Store) tryAcquire(caller context.Context, ns, id, token string) (bool, error) {
-	ctx, cancel := context.WithTimeout(caller, s.cfg.OpTimeout)
-	defer cancel()
-	var removed, busy bool
-	err := s.cfg.Pool.QueryRow(ctx, `SELECT
-  EXISTS (SELECT 1 FROM goagent_durable_scope WHERE ns = $1),
-  COALESCE((SELECT expires_at >= now() FROM goagent_durable_lease WHERE ns = $1 AND id = $2), false)`, ns, id).Scan(&removed, &busy)
-	if err != nil {
-		return false, err
-	}
-	if removed {
-		return false, agentErrors.ErrScopeRemoved
-	}
-	if busy {
-		return false, nil
-	}
-	acquired := false
-	writeAttempted := false
-	err = pgx.BeginTxFunc(ctx, s.cfg.Pool, pgx.TxOptions{IsoLevel: pgx.ReadCommitted}, func(tx pgx.Tx) error {
-		if err := checkScope(ctx, tx, ns); err != nil {
-			return err
-		}
-		// 顺序固定为 scope 锁 -> lease 锁 -> 行锁；清理租约不再取 scope 锁。
-		if err := lockLease(ctx, tx, ns, id); err != nil {
-			return err
-		}
-		var got string
-		writeAttempted = true
-		err := tx.QueryRow(ctx, `INSERT INTO goagent_durable_lease (ns, id, token, owner, expires_at)
-VALUES ($1, $2, $3, $4, now() + $5 * interval '1 millisecond')
-ON CONFLICT (ns, id) DO UPDATE SET token = EXCLUDED.token, owner = EXCLUDED.owner, expires_at = EXCLUDED.expires_at
-WHERE goagent_durable_lease.expires_at < now()
-RETURNING token`, ns, id, token, s.cfg.Owner, s.cfg.LeaseTTL.Milliseconds()).Scan(&got)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
-		}
-		acquired = err == nil
-		return err
+	b := &backend{pool: cfg.Pool, opTimeout: cfg.OpTimeout}
+	inner, err := leasestore.New(leasestore.Config{
+		Backend:       b,
+		RenewBackend:  &backend{pool: cfg.RenewPool, opTimeout: cfg.OpTimeout},
+		LeaseTTL:      cfg.LeaseTTL,
+		RenewInterval: cfg.RenewInterval,
+		PollInterval:  cfg.PollInterval,
+		OpTimeout:     cfg.OpTimeout,
+		ExpiredGrace:  cfg.ExpiredGrace,
+		Owner:         cfg.Owner,
+		OnError:       cfg.OnError,
 	})
-	if err != nil && writeAttempted {
-		// 事务结束后再清理；取消不能取消补偿，lease 锁保证看见原事务的最终结果。
-		s.deleteLease(ns, id, token)
-	}
-	return acquired, err
-}
-
-// checkScope 在事务内对作用域取共享锁并检查墓碑，与 RemoveScope 的排他锁互斥；根命名空间跳过。
-func checkScope(ctx context.Context, tx pgx.Tx, ns string) error {
-	if ns == "" {
-		return nil
-	}
-	// 墓碑须用另一条语句查询：READ COMMITTED 的快照在语句开始时取得，与加锁同一语句会看不到等锁期间提交的墓碑。
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock_shared(hashtextextended($1, 0))`, ns); err != nil {
-		return err
-	}
-	var removed bool
-	err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM goagent_durable_scope WHERE ns = $1)`, ns).Scan(&removed)
-	if err == nil && removed {
-		err = agentErrors.ErrScopeRemoved
-	}
-	return err
-}
-
-// lockLease 串行化同一 (ns, id) 的获取与清理，持有到事务提交或回滚。
-// 双 int 键与 scope 使用的单 bigint 键属于不同锁空间，避免锁别名引入死锁。
-// 哈希碰撞只会额外串行化；实际读写仍使用完整的 ns、id 与 token。
-func lockLease(ctx context.Context, tx pgx.Tx, ns, id string) error {
-	_, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))`, ns, id)
-	return err
-}
-
-func (s *Store) deleteLease(ns, id, token string) {
-	ctx, cancel := s.opContext()
-	defer cancel()
-	err := pgx.BeginTxFunc(ctx, s.cfg.Pool, pgx.TxOptions{IsoLevel: pgx.ReadCommitted}, func(tx pgx.Tx) error {
-		if err := lockLease(ctx, tx, ns, id); err != nil {
-			return err
-		}
-		// 必须在获锁后的独立语句中 DELETE：新快照才能看到等待期间提交的租约。
-		// token 限制保证不误删已接管的持有者；不检查 scope，墓碑不能阻止清理。
-		_, err := tx.Exec(ctx, `DELETE FROM goagent_durable_lease WHERE ns = $1 AND id = $2 AND token = $3`, ns, id, token)
-		return err
-	})
-	s.report("delete_lease", err)
-}
-
-// unlocker 返回的函数可重复调用。租约已被接管或删除失败时返回 nil，经 OnError 报告：此前的写入都受令牌保护。
-func (s *Store) unlocker(k string, g *gate, h *hold) func() error {
-	var once sync.Once
-	return func() error {
-		once.Do(func() {
-			s.mu.Lock()
-			if s.owners[k] == h {
-				delete(s.owners, k)
-			}
-			s.mu.Unlock()
-			s.deleteLease(h.ns, h.id, h.token)
-			s.leaveGate(k, g, true)
-			s.holders.Done()
-		})
-		return nil
-	}
-}
-
-func (s *Store) load(ctx context.Context, ns, id string) (*durable.Snapshot, error) {
-	var removed bool
-	var data []byte
-	err := s.cfg.Pool.QueryRow(ctx, `SELECT
-  EXISTS (SELECT 1 FROM goagent_durable_scope WHERE ns = $1),
-  (SELECT data FROM goagent_durable_snapshot WHERE ns = $1 AND id = $2)`, ns, id).Scan(&removed, &data)
 	if err != nil {
 		return nil, err
 	}
-	if removed {
-		return nil, agentErrors.ErrScopeRemoved
-	}
-	if data == nil {
-		return nil, fmt.Errorf("持久快照 %q 不存在：%w", id, os.ErrNotExist)
-	}
-	var snap durable.Snapshot
-	if err := json.Unmarshal(data, &snap); err != nil {
-		return nil, fmt.Errorf("持久快照 %q 已损坏：%w", id, err)
-	}
-	return &snap, nil
-}
-
-func (s *Store) save(ctx context.Context, ns, id string, snap *durable.Snapshot) error {
-	return s.saveAll(ctx, ns, []durable.Write{{ID: id, Snapshot: snap}})
-}
-
-// saveAll 在一个事务内写入全部快照并校验每个 ID 的租约。按 ID 排序写入，避免并发批量写入互相等待行锁。
-func (s *Store) saveAll(ctx context.Context, ns string, writes []durable.Write) error {
-	if err := durable.ValidateWrites(writes); err != nil {
-		return err
-	}
-	if len(writes) == 0 {
-		return nil
-	}
-	type row struct {
-		id, token string
-		data      []byte
-	}
-	rows := make([]row, len(writes))
-	for i, write := range writes {
-		s.mu.Lock()
-		h := s.owners[key(ns, write.ID)]
-		s.mu.Unlock()
-		if h == nil {
-			return fmt.Errorf("%w：本进程未持有 %q 的锁", agentErrors.ErrLeaseLost, write.ID)
-		}
-		data, err := json.Marshal(write.Snapshot)
-		if err != nil {
-			return err
-		}
-		rows[i] = row{id: write.ID, token: h.token, data: data}
-	}
-	slices.SortFunc(rows, func(a, b row) int { return strings.Compare(a.id, b.id) })
-	// 获得 scope 锁后须读取新快照，不能继承连接的 REPEATABLE READ 默认值。
-	return pgx.BeginTxFunc(ctx, s.cfg.Pool, pgx.TxOptions{IsoLevel: pgx.ReadCommitted}, func(tx pgx.Tx) error {
-		ms := fmt.Sprint(s.cfg.OpTimeout.Milliseconds())
-		if _, err := tx.Exec(ctx, `SELECT set_config('synchronous_commit', 'on', true), set_config('lock_timeout', $1, true), set_config('statement_timeout', $1, true)`, ms); err != nil {
-			return err
-		}
-		if err := checkScope(ctx, tx, ns); err != nil {
-			return err
-		}
-		for _, r := range rows {
-			// 只校验令牌：接管必然改写令牌，过期但未被接管时写入是安全的；UPDATE 持有租约行锁直到提交，同时顺带续约。
-			tag, err := tx.Exec(ctx, `WITH l AS (
-  UPDATE goagent_durable_lease SET expires_at = now() + $5 * interval '1 millisecond'
-  WHERE ns = $1 AND id = $2 AND token = $3 RETURNING 1
-)
-INSERT INTO goagent_durable_snapshot (ns, id, data, updated_at)
-SELECT $1, $2, $4, now() WHERE EXISTS (SELECT 1 FROM l)
-ON CONFLICT (ns, id) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at`,
-				ns, r.id, r.token, r.data, s.cfg.LeaseTTL.Milliseconds())
-			if err != nil {
-				return err
-			}
-			if tag.RowsAffected() == 0 {
-				return fmt.Errorf("%w：%q", agentErrors.ErrLeaseLost, r.id)
-			}
-		}
-		return nil
-	})
-}
-
-// background 定期批量续约本进程持有的租约，并清理过期已久的租约行。
-func (s *Store) background() {
-	defer close(s.renewDone)
-	ticker := time.NewTicker(s.cfg.RenewInterval)
-	defer ticker.Stop()
-	lastCleanup := time.Now()
-	for {
-		select {
-		case <-s.stop:
-			return
-		case <-ticker.C:
-		}
-		s.renew()
-		if time.Since(lastCleanup) >= s.cfg.ExpiredGrace {
-			lastCleanup = time.Now()
-			s.cleanupExpired()
-		}
-	}
-}
-
-func (s *Store) renew() {
-	var nss, ids, tokens []string
-	s.mu.Lock()
-	for _, h := range s.owners {
-		if h.renew {
-			nss, ids, tokens = append(nss, h.ns), append(ids, h.id), append(tokens, h.token)
-		}
-	}
-	s.mu.Unlock()
-	if len(tokens) == 0 {
-		return
-	}
-	ctx, cancel := s.opContext()
-	defer cancel()
-	_, err := s.cfg.RenewPool.Exec(ctx, `UPDATE goagent_durable_lease AS l
-SET expires_at = now() + $4 * interval '1 millisecond'
-FROM unnest($1::text[], $2::text[], $3::text[]) AS h(ns, id, token)
-WHERE l.ns = h.ns AND l.id = h.id AND l.token = h.token`, nss, ids, tokens, s.cfg.LeaseTTL.Milliseconds())
-	s.report("renew", err)
-}
-
-// cleanupExpired 删除过期已久的租约：持久操作 ID 由执行键派生，崩溃留下的租约可能永远不会再被获取。
-// 删除是安全的，旧持有者写入时因令牌不存在而被拒。
-func (s *Store) cleanupExpired() {
-	ctx, cancel := s.opContext()
-	defer cancel()
-	_, err := s.cfg.RenewPool.Exec(ctx, `DELETE FROM goagent_durable_lease WHERE expires_at < now() - $1 * interval '1 millisecond'`, s.cfg.ExpiredGrace.Milliseconds())
-	s.report("cleanup", err)
-}
-
-// Close 拒绝新的 Lock，在 ctx 截止前等待现有持有者解锁，然后停止续约并释放剩余租约。
-// 不关闭 Pool。超时返回 ctx 错误，此时仍在运行的持有者之后的写入可能因租约被接管而失败。
-func (s *Store) Close(ctx context.Context) error {
-	s.mu.Lock()
-	if s.closed {
-		s.mu.Unlock()
-		return nil
-	}
-	s.closed = true
-	s.mu.Unlock()
-	done := make(chan struct{})
-	go func() {
-		s.holders.Wait()
-		close(done)
-	}()
-	var err error
-	select {
-	case <-done:
-	case <-ctx.Done():
-		err = ctx.Err()
-	}
-	close(s.stop)
-	<-s.renewDone
-	s.mu.Lock()
-	remaining := make([]*hold, 0, len(s.owners))
-	for _, h := range s.owners {
-		h.renew = false
-		remaining = append(remaining, h)
-	}
-	s.mu.Unlock()
-	for _, h := range remaining {
-		s.deleteLease(h.ns, h.id, h.token)
-	}
-	return err
+	return &Store{Store: inner, cfg: cfg, backend: b}, nil
 }

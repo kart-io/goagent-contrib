@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kart-io/goagent/core/durable/leasestore"
 	agentErrors "github.com/kart-io/goagent/errors"
 )
 
@@ -54,8 +55,7 @@ func TestDeleteLeaseWaitsForAcquireTransaction(t *testing.T) {
 					t.Cleanup(pool.Close)
 					errors := make(chan error, 1)
 					// No background renewer: only the acquiring transaction can finish this lease.
-					s := &Store{cfg: Config{Pool: pool, OpTimeout: 5 * time.Second,
-						OnError: func(_ string, err error) { errors <- err }}}
+					s := &backend{pool: pool, opTimeout: 5 * time.Second}
 					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 					defer cancel()
 					tx, err := observer.Begin(ctx)
@@ -74,7 +74,9 @@ VALUES ($1, 'run', $2, 'test', now() + interval '1 minute')`, ns, token)
 					require.NoError(t, err)
 					done := make(chan struct{})
 					go func() {
-						s.deleteLease(ns, "run", "ours")
+						if err := s.ReleaseLease(ctx, leasestore.Lease{NS: ns, ID: "run", Token: "ours"}); err != nil {
+							errors <- err
+						}
 						close(done)
 					}()
 					// Ensure the worker ends even on an assertion failure before releasing the transaction.
@@ -119,7 +121,7 @@ func TestTryAcquireUsesLeaseTransactionLock(t *testing.T) {
 		t.Run(ns, func(t *testing.T) {
 			dsn, schema := newSchema(t)
 			pool := newPool(t, dsn, schema)
-			s := &Store{cfg: Config{Pool: pool, OpTimeout: 5 * time.Second, LeaseTTL: time.Minute}}
+			s := &backend{pool: pool, opTimeout: 5 * time.Second}
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			tx, err := pool.Begin(ctx)
@@ -131,7 +133,7 @@ func TestTryAcquireUsesLeaseTransactionLock(t *testing.T) {
 			var acquired bool
 			var acquireErr error
 			go func() {
-				acquired, acquireErr = s.tryAcquire(ctx, ns, "run", "ours")
+				acquired, acquireErr = s.AcquireLease(ctx, leasestore.Lease{NS: ns, ID: "run", Token: "ours"}, "test", time.Minute)
 				close(done)
 			}()
 			defer func() {
@@ -143,7 +145,7 @@ func TestTryAcquireUsesLeaseTransactionLock(t *testing.T) {
 			<-done
 			require.NoError(t, acquireErr)
 			require.True(t, acquired)
-			s.deleteLease(ns, "run", "ours")
+			require.NoError(t, s.ReleaseLease(ctx, leasestore.Lease{NS: ns, ID: "run", Token: "ours"}))
 		})
 	}
 }
@@ -151,9 +153,7 @@ func TestTryAcquireUsesLeaseTransactionLock(t *testing.T) {
 func TestLeaseCleanupDoesNotWaitForScopeLock(t *testing.T) {
 	dsn, schema := newSchema(t)
 	pool := newPool(t, dsn, schema)
-	errors := make(chan error, 1)
-	s := &Store{cfg: Config{Pool: pool, OpTimeout: 5 * time.Second, LeaseTTL: time.Minute,
-		OnError: func(_ string, err error) { errors <- err }}}
+	s := &backend{pool: pool, opTimeout: 5 * time.Second}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	ns := scopeNS("tenant")
@@ -169,7 +169,7 @@ VALUES ($1, 'run', 'ours', 'test', now() + interval '1 minute')`, ns)
 	var acquired bool
 	var acquireErr error
 	go func() {
-		acquired, acquireErr = s.tryAcquire(ctx, ns, "next", "next-token")
+		acquired, acquireErr = s.AcquireLease(ctx, leasestore.Lease{NS: ns, ID: "next", Token: "next-token"}, "test", time.Minute)
 		close(done)
 	}()
 	defer func() {
@@ -185,12 +185,7 @@ VALUES ($1, 'run', 'ours', 'test', now() + interval '1 minute')`, ns)
 	require.False(t, leaseLocked, "acquisition must take the scope lock before the lease lock")
 
 	// Cleanup must finish while the exclusive scope lock is still held.
-	s.deleteLease(ns, "run", "ours")
-	select {
-	case err := <-errors:
-		t.Fatalf("cleanup failed while scope was locked: %v", err)
-	default:
-	}
+	require.NoError(t, s.ReleaseLease(ctx, leasestore.Lease{NS: ns, ID: "run", Token: "ours"}), "cleanup failed while scope was locked")
 	var n int
 	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM goagent_durable_lease WHERE ns = $1 AND id = 'run'`, ns).Scan(&n))
 	require.Zero(t, n)

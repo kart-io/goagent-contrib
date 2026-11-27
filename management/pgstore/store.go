@@ -15,7 +15,6 @@ import (
 	agentErrors "github.com/kart-io/goagent/errors"
 	mg "github.com/kart-io/goagent/management"
 	"strings"
-	"time"
 )
 
 type executor interface {
@@ -296,16 +295,11 @@ func (s *Store) History(ctx context.Context, id string, after int64, limit int, 
 			return empty, err
 		}
 		for _, row := range rows {
-			var ev struct {
-				Seq  int64           `json:"seq"`
-				Type string          `json:"type"`
-				Time time.Time       `json:"time"`
-				Data json.RawMessage `json:"data"`
-			}
+			var ev session.Event
 			if err = json.Unmarshal(row.Event, &ev); err != nil {
 				return empty, err
 			}
-			events = append(events, session.Event{Seq: ev.Seq, Type: ev.Type, Time: ev.Time, Data: ev.Data})
+			events = append(events, ev)
 			next = row.Seq
 		}
 		if limit > 0 || len(rows) < size {

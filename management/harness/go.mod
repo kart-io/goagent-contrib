@@ -3,7 +3,7 @@ module github.com/kart-io/goagent-contrib/management/harness
 go 1.27.0
 
 require (
-	github.com/kart-io/goagent v0.67.0
+	github.com/kart-io/goagent v0.67.1
 	github.com/kart-io/goagent-harness v0.0.0-20261116023532-218c2e42d194
 	github.com/stretchr/testify v1.12.1
 )

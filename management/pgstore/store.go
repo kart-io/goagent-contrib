@@ -34,65 +34,15 @@ func table(kind string) (string, error) {
 	return "", agentErrors.ErrManagementInvalid
 }
 
-// Migrate 必须由宿主显式调用；版本检查在 New 中完成。
+// Migrate 在一个事务里执行 Schema，供测试、示例和没有迁移流程的宿主使用；
+// 有迁移流程的宿主把 Schema 放进自己的迁移，不调用它。
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	return pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(80261108)`); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `CREATE TABLE IF NOT EXISTS mg_schema(version integer PRIMARY KEY CHECK(version=1)); INSERT INTO mg_schema VALUES(1) ON CONFLICT DO NOTHING`); err != nil {
-			return err
-		}
-		for _, kind := range mg.Kinds {
-			tbl, _ := table(kind)
-			_, err := tx.Exec(ctx, `CREATE TABLE IF NOT EXISTS `+tbl+`(tenant_id text NOT NULL,id text NOT NULL,revision bigint NOT NULL CHECK(revision>0),created_at timestamptz NOT NULL,data jsonb NOT NULL,PRIMARY KEY(tenant_id,id),CHECK(data->>'id'=id),CHECK(data->>'tenant_id'=tenant_id),CHECK((data->>'revision')::bigint=revision)); CREATE INDEX IF NOT EXISTS `+tbl+`_created ON `+tbl+`(tenant_id,created_at,id)`)
-			if err != nil {
-				return err
-			}
-		}
-		if _, err := tx.Exec(ctx, reconciliationSchema); err != nil {
-			return err
-		}
-		for _, link := range []struct{ child, field, parent string }{{"versions", "agent_id", "agents"}, {"sessions", "agent_id", "agents"}, {"tasks", "session_id", "sessions"}, {"tasks", "agent_id", "agents"}, {"approvals", "task_id", "tasks"}, {"attempts", "task_id", "tasks"}} {
-			name := "mg_" + link.child
-			col := link.field
-			if _, err := tx.Exec(ctx, `ALTER TABLE `+name+` ADD COLUMN IF NOT EXISTS `+col+` text GENERATED ALWAYS AS (data->>'`+col+`') STORED`); err != nil {
-				return err
-			}
-			constraint := name + "_" + col + "_fk"
-			var exists bool
-			if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname=$1 AND conrelid=$2::regclass)`, constraint, name).Scan(&exists); err != nil {
-				return err
-			}
-			if !exists {
-				if _, err := tx.Exec(ctx, `ALTER TABLE `+name+` ADD CONSTRAINT `+constraint+` FOREIGN KEY(tenant_id,`+col+`) REFERENCES mg_`+link.parent+`(tenant_id,id)`); err != nil {
-					return err
-				}
-			}
-		}
-		for _, k := range []string{"sessions", "tasks"} {
-			name := "mg_" + k
-			if _, err := tx.Exec(ctx, `ALTER TABLE `+name+` ADD COLUMN IF NOT EXISTS version_id text GENERATED ALWAYS AS ((data->>'agent_id')||'@'||(data->>'version')) STORED`); err != nil {
-				return err
-			}
-			var exists bool
-			constraint := name + "_version_fk"
-			if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname=$1 AND conrelid=$2::regclass)`, constraint, name).Scan(&exists); err != nil {
-				return err
-			}
-			if !exists {
-				if _, err := tx.Exec(ctx, `ALTER TABLE `+name+` ADD CONSTRAINT `+constraint+` FOREIGN KEY(tenant_id,version_id) REFERENCES mg_versions(tenant_id,id)`); err != nil {
-					return err
-				}
-			}
-		}
-		for _, kind := range []string{"tasks", "commands", "approvals", "outbox"} {
-			name := "mg_" + kind
-			if _, err := tx.Exec(ctx, `CREATE INDEX IF NOT EXISTS `+name+`_state ON `+name+`(tenant_id,(data->>'state'),created_at,id)`); err != nil {
-				return err
-			}
-		}
-		return nil
+		_, err := tx.Exec(ctx, Schema)
+		return err
 	})
 }
 func New(ctx context.Context, pool *pgxpool.Pool) (*Store, error) {
@@ -103,7 +53,7 @@ func New(ctx context.Context, pool *pgxpool.Pool) (*Store, error) {
 	if err := pool.QueryRow(ctx, `SELECT version FROM mg_schema`).Scan(&v); err != nil {
 		return nil, err
 	}
-	if v != 1 {
+	if v != SchemaVersion {
 		return nil, agentErrors.ErrManagementUnsupported
 	}
 	return &Store{pool}, nil

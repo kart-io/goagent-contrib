@@ -10,21 +10,6 @@ import (
 	mg "github.com/kart-io/goagent/management"
 )
 
-// reconciliationSchema is applied by Migrate. It is not a Document kind and
-// does not change the mg_schema version: the table is additive and only read
-// through Lookup.
-const reconciliationSchema = `CREATE TABLE IF NOT EXISTS mg_reconciliations(
-tenant_id text NOT NULL,
-id text NOT NULL,
-task_id text NOT NULL,
-version_hash text NOT NULL,
-evidence_hash text NOT NULL,
-resolution text NOT NULL,
-verified_by text NOT NULL,
-verified_at timestamptz NOT NULL,
-operation_refs jsonb NOT NULL,
-PRIMARY KEY(tenant_id,id))`
-
 // RecordReconciliation implements management.ReconciliationStore.
 func (s *Store) RecordReconciliation(ctx context.Context, r mg.Reconciliation) error {
 	if r.ID == "" || r.TenantID == "" {

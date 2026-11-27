@@ -8,6 +8,7 @@
 | [`httpagent`](httpagent) | HTTP JSON/SSE、WebSocket 入口，双向 Webhook 接纳/通知与生命周期观察，配合 Plugin 使用 | net/http、gorilla/websocket |
 | [`acp`](acp) | 以 Agent Client Protocol（ACP）Agent 身份经 stdio 运行 Agent，供 Zed 等编辑器驱动：流式回答、工具通知与审批、会话恢复、文件与终端转发 | coder/acp-go-sdk |
 | [`durable/pgstore`](durable/pgstore) | 核心 `core/durable/leasestore` 的 PostgreSQL 后端：`durable.Store`、`durable.Scoped` 与会话日志 `session.Store`，支持多个实例共享持久运行与会话；租约逻辑在 GoAgent | pgx |
+| [`durable/gormstore`](durable/gormstore) | 同一个 `leasestore` 的 gorm 后端，供已经用 gorm 连接 MySQL 8 或 PostgreSQL 的服务使用；功能与 `durable/pgstore` 相同 | gorm |
 | [`cache/redis`](cache/redis) | Redis 版 `cache.Bytes` 与 `cache.Tagged`，多个实例共享模型调用缓存，一个实例遗忘记忆后其他实例的缓存条目被物理删除；单机、哨兵与 Cluster | go-redis |
 | [`memory/pgvector`](memory/pgvector) | pgvector 版 `memory.Index`，多个实例共享长期记忆的向量索引 | pgx、pgvector-go |
 | [`memory/qdrant`](memory/qdrant) | Qdrant 版 `memory.Index`，多个实例共享长期记忆的向量索引；每个嵌入维度一个集合 | qdrant go-client |
@@ -71,6 +72,21 @@ defer store.Close(ctx)
 - **会话日志**：`pgstore.NewSessionStore(ctx, store)` 返回 `session.Store`，与 `store` 共享连接池与租约，传给 `builder.WithSessionLog`；持久运行用 `session.DurableStore(sessions, id)`，对话与操作快照位于同一会话。须另建 `pgstore.SessionSchema`（依赖 `Schema` 的租约表），`NewSessionStore` 校验 `pgstore.SessionSchemaVersion`。追加持久快照时校验租约，被接管后的旧持有者写入返回 `durable.ErrLeaseLost`，因此快照只能在持锁时追加。
 - **设计**：[多实例 durable.Store 设计](https://github.com/kart-io/goagent/blob/master/docs/superpowers/specs/2026-10-29-multi-instance-durable-store.md)。
 
+## durable/gormstore
+
+```go
+db, _ := gorm.Open(mysql.Open(dsn)) // 或 postgres.Open(dsn)；直连主库
+store, err := gormstore.New(ctx, gormstore.Config{DB: db})
+defer store.Close(ctx)
+sessions, err := gormstore.NewSessionStore(ctx, store)
+```
+
+- **适用**：服务已经用 gorm，或数据库是 MySQL。只用 PostgreSQL 且不需要 gorm 的服务用 `durable/pgstore`。
+- **建表**：按数据库取 `gormstore.SchemaMySQL` 或 `gormstore.SchemaPostgres`（会话日志另加 `SessionSchemaMySQL` / `SessionSchemaPostgres`），由宿主纳入自己的迁移流程；`New` 只校验版本，不建表，也不使用 `AutoMigrate`。表名以 `goagent_gorm_` 开头，与 pgstore 的表互不相干，两个模块的数据不能互换。
+- **与 pgstore 的差别**：不用 PostgreSQL 的咨询锁，改用预置表 `goagent_gorm_gate` 的行锁，这张表的行不能增删；不设置 `synchronous_commit`，高可用部署由数据库自身的配置保证已提交事务不丢；没有 `ImportFileStore`。
+- **MySQL 的限制**：须为 8.0 及以上的 InnoDB 并保持严格模式；命名空间、快照 ID 与会话 ID 各不超过 1024 字节，超长的写入报错。
+- **运行管理**：`management` 的存储只有 PostgreSQL（pgx）实现，本模块不提供。
+
 ### 测试
 
 ```bash
@@ -88,6 +104,14 @@ pgstore 的 Postgres 测试：
 
 也可以指定已有数据库：`GOAGENT_PGSTORE_DSN=postgres://... go test ./...`（在 `durable/pgstore` 目录下）；未设置时 Postgres 测试被跳过。
 
+gormstore 在 MySQL 与 PostgreSQL 上各跑一遍核心的后端一致性套件：
+
+```bash
+./scripts/test-gormstore.sh   # 需要 Docker；启动临时 MySQL 8.0 与 Postgres 容器（数据在 tmpfs），运行全部测试后删除
+```
+
+连接变量为 `GOAGENT_GORMSTORE_MYSQL_DSN` 与 `GOAGENT_GORMSTORE_PG_DSN`，未设置的那种数据库被跳过。
+
 Redis、pgvector 与端到端测试（均需要 Docker，启动临时容器、运行后删除）：
 
 ```bash
@@ -100,7 +124,7 @@ Redis、pgvector 与端到端测试（均需要 Docker，启动临时容器、�
 
 连接变量为 `GOAGENT_REDIS_ADDR`（Cluster 为逗号分隔地址）、`GOAGENT_PGVECTOR_DSN` 与 `GOAGENT_QDRANT_ADDR`（memory/qdrant 的 gRPC 地址 host:port），未设置时对应测试被跳过。`integration/distributedmemory` 是只含测试、不发布的模块：用两个实例共享同一 Redis 与 Postgres，验证一个实例 `Forget` 后其他实例写入的缓存条目被物理删除、召回能用到其他实例写入的向量；它让 `cache/redis` 的使用者不必引入 pgx 与 pgstore。
 
-CI 对每个模块在 Go 1.27.3 下运行 vet、`go test -race` 与 golangci-lint，pgstore 连接服务容器中的 Postgres；数据库重启与同步提交测试需要专用容器，只在本地 `test-pgstore.sh` 中运行。
+CI 对每个模块在 Go 1.27.3 下运行 vet、`go test -race` 与 golangci-lint，pgstore 连接服务容器中的 Postgres，gormstore 连接服务容器中的 MySQL 与 Postgres；数据库重启与同步提交测试需要专用容器，只在本地 `test-pgstore.sh` 中运行。
 
 ### 版本
 

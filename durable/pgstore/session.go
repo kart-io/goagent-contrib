@@ -297,6 +297,26 @@ func (s *SessionStore) List(ctx context.Context) ([]string, error) {
 	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
+var _ session.Deleter = (*SessionStore)(nil)
+
+// Delete 实现 session.Deleter：删除会话及其全部事件（含其中的持久快照），会话不存在时同样成功。
+// 先锁会话行，与并发的追加和分叉串行。
+func (s *SessionStore) Delete(ctx context.Context, id string) error {
+	if err := validSessionID(id); err != nil {
+		return err
+	}
+	return s.writeTx(ctx, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SELECT 1 FROM goagent_session WHERE id = $1 FOR UPDATE`, id); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM goagent_session_event WHERE session_id = $1`, id); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `DELETE FROM goagent_session WHERE id = $1`, id)
+		return err
+	})
+}
+
 // Fork 实现 session.Store。复制期间对来源会话行取共享锁，复制的是一个完整的前缀。
 func (s *SessionStore) Fork(ctx context.Context, src, dst string, upTo int64) error {
 	if err := validSessionID(dst); err != nil {

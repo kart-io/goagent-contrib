@@ -4,7 +4,7 @@
 
 获取、清理、Save/SaveAll、RemoveScope、PruneRemoved 和 SessionStore 写事务均显式使用 READ COMMITTED，不依赖连接默认隔离级别。清理的 DELETE 和 scope 墓碑检查必须是获锁后的独立语句，不能与加锁合并到同一 SQL/CTE：PostgreSQL 的语句快照在等待前建立。仅拆成两条 SQL 也不足以支持 REPEATABLE READ 的事务快照。依据：[事务隔离](https://www.postgresql.org/docs/current/transaction-iso.html)、[advisory 锁](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS)。
 
-RemoveScope 与 PruneRemoved 获锁后重新判定墓碑，重复操作不会因连接默认 RR 使用旧快照而报序列化错误。SessionStore 的追加、批量比较与 Fork 同样依赖获行锁后的已提交状态：追加冲突返回 `ErrSessionConflict`，Fork 复制完整前缀；token 条件和事务行锁仍保护快照写入。这些操作覆盖整个写事务的隔离级别，不修改连接或服务器的默认配置。
+RemoveScope 与 PruneRemoved 获锁后重新判定墓碑，重复操作不会因连接默认 RR 使用旧快照而报序列化错误。SessionStore 的追加、批量比较与 Fork 同样依赖获行锁后的已提交状态：追加冲突返回 `ErrSessionConflict`，Fork 复制完整前缀，`Delete`（`session.Deleter`）先锁会话行再删事件与会话行、会话不存在时同样成功；token 条件和事务行锁仍保护快照写入。这些操作覆盖整个写事务的隔离级别，不修改连接或服务器的默认配置。
 
 获取顺序为 scope 共享锁 → lease 排他锁 → 行锁；清理只取 lease 锁与行锁，不请求 scope 锁，也不因 scope 墓碑跳过清理。lease 使用双 int 键，scope 使用单 bigint 键，两种锁空间互不重叠；哈希碰撞仅增加串行等待，不改变实际行匹配。
 

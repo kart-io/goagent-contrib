@@ -7,7 +7,7 @@
 | [`management`](management) | 核心 management 的 PostgreSQL 实现、真实数据库集成测试与退款案例；通用管理和 HTTP Handler 已迁入 GoAgent | pgx、GoAgent |
 | [`httpagent`](httpagent) | HTTP JSON/SSE、WebSocket 入口，双向 Webhook 接纳/通知与生命周期观察，配合 Plugin 使用 | net/http、gorilla/websocket |
 | [`acp`](acp) | 以 Agent Client Protocol（ACP）Agent 身份经 stdio 运行 Agent，供 Zed 等编辑器驱动：流式回答、工具通知与审批、会话恢复、文件与终端转发 | coder/acp-go-sdk |
-| [`durable/pgstore`](durable/pgstore) | 基于 Postgres 的 `durable.Store`、`durable.Scoped` 与会话日志 `session.Store`，支持多个实例共享持久运行与会话 | pgx |
+| [`durable/pgstore`](durable/pgstore) | 核心 `core/durable/leasestore` 的 PostgreSQL 后端：`durable.Store`、`durable.Scoped` 与会话日志 `session.Store`，支持多个实例共享持久运行与会话；租约逻辑在 GoAgent | pgx |
 | [`cache/redis`](cache/redis) | Redis 版 `cache.Bytes` 与 `cache.Tagged`，多个实例共享模型调用缓存，一个实例遗忘记忆后其他实例的缓存条目被物理删除；单机、哨兵与 Cluster | go-redis |
 | [`memory/pgvector`](memory/pgvector) | pgvector 版 `memory.Index`，多个实例共享长期记忆的向量索引 | pgx、pgvector-go |
 | [`memory/qdrant`](memory/qdrant) | Qdrant 版 `memory.Index`，多个实例共享长期记忆的向量索引；每个嵌入维度一个集合 | qdrant go-client |
@@ -26,13 +26,11 @@
 
 外围扩展指把 GoAgent 核心定义的接口接到某个第三方依赖上的适配实现。新增或修改模块前按以下规则判断归属：
 
-1. **按第三方依赖划分。** 不引入第三方依赖的通用逻辑属于 GoAgent 核心，包括接口、状态机、租约与重试等并发控制、内存实现、一致性测试套件。本仓库只放绑定具体驱动或服务的部分。先例是 `management`：存储端口、内存实现和一致性套件在核心，这里只有 PostgreSQL 实现。
+1. **按第三方依赖划分。** 不引入第三方依赖的通用逻辑属于 GoAgent 核心，包括接口、状态机、租约与重试等并发控制、内存实现、一致性测试套件。本仓库只放绑定具体驱动或服务的部分。`management` 和 `durable/pgstore` 都是这样拆的：存储端口、通用逻辑和一致性套件在核心，这里只有 PostgreSQL 实现。
 2. **实现核心接口，不另立契约。** 接口和错误语义以核心为准，模块必须通过核心对应的一致性套件。
 3. **不含调用方业务。** 模块里不出现宿主的表、字段、租户或业务规则。存储类模块的表结构是模块自己的 Schema，以常量公布，由宿主纳入迁移。调用方要用自己的表、ORM 或其他数据库时，在自己的仓库实现核心的对应接口，不修改本仓库模块，也不在模块里加表名、字段名配置或 SQL 模板。
 4. **一个模块绑定一种后端。** 支持另一种后端（gorm、MySQL 等）是新增模块，不在已有模块里加开关。
 5. **自检。** 去掉第三方依赖后，模块里还剩下可复用的逻辑，这部分就应该移入核心。
-
-已知偏差：`durable/pgstore` 把通用的租约逻辑（进程内闸门、续租、补偿）和 PostgreSQL SQL 写在同一个包里，不符合第 1 条，调用方因此无法只复用租约逻辑接自己的存储。
 
 ## HTTP Agent 文档
 
@@ -66,6 +64,7 @@ defer store.Close(ctx)
 // 与 durable.FileStore 用法相同：Runner、DurableGraph、budget.NewDurable、contextpolicy.NewDurableResultStore 等
 ```
 
+- **用自己的表或 ORM**：本模块的表结构固定为 `pgstore.Schema`。要用 gorm、其他数据库或自己的表时，不改本模块：在自己的仓库实现 GoAgent 的 `leasestore.Backend` 与 `leasestore.SessionBackend`，传给 `leasestore.New`，并用 `leasestore/backendtest.Run` 验证。
 - **建表**：`pgstore.Schema` 由宿主纳入自己的迁移流程，`New` 只校验 `pgstore.SchemaVersion`。
 - **前置条件**：直连主库（不能指向读副本）；高可用部署须同步复制并隔离旧主；`LeaseTTL`（默认 30 秒）须大于主备切换时长。详见包文档。
 - **从 FileStore 迁移**：停止所有实例，等进行中与等待审批的运行结束，用 `pgstore.ImportFileStore` 离线导入根命名空间的快照，再切换。两种 Store 不能混跑；作用域数据（上下文证据）无法导入。

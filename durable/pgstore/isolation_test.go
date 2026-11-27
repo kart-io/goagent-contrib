@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kart-io/goagent/core/durable"
+	"github.com/kart-io/goagent/core/durable/leasestore"
 	"github.com/kart-io/goagent/core/session"
 	agentErrors "github.com/kart-io/goagent/errors"
 )
@@ -36,7 +37,7 @@ func TestSaveRejectsTombstoneAfterScopeWait(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				dsn, schema := newSchema(t)
 				observer := newPool(t, dsn, schema)
-				s := newIdleStore(isolationPool(t, dsn, schema, isolation))
+				s := newIdleStore(t, isolationPool(t, dsn, schema, isolation))
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				defer cancel()
 				view := s.Scope("tenant")
@@ -93,7 +94,7 @@ func TestScopeMaintenanceAfterConcurrentTransaction(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				dsn, schema := newSchema(t)
 				observer := newPool(t, dsn, schema)
-				s := newIdleStore(isolationPool(t, dsn, schema, isolation))
+				s := newIdleStore(t, isolationPool(t, dsn, schema, isolation))
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				defer cancel()
 				ns := scopeNS("tenant")
@@ -149,18 +150,22 @@ func TestSessionWritesAfterRowWait(t *testing.T) {
 			t.Run(isolation+"/"+op, func(t *testing.T) {
 				dsn, schema := newSchema(t)
 				observer := newPool(t, dsn, schema)
-				s := &SessionStore{root: newIdleStore(isolationPool(t, dsn, schema, isolation))}
+				s, err := NewSessionStore(context.Background(), newIdleStore(t, isolationPool(t, dsn, schema, isolation)))
+				require.NoError(t, err)
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				defer cancel()
 				event := session.Event{Type: "test", Data: json.RawMessage(`{}`)}
-				_, err := s.Append(ctx, "session", 0, event)
+				_, err = s.Append(ctx, "session", 0, event)
 				require.NoError(t, err)
 				tx, err := observer.Begin(ctx)
 				require.NoError(t, err)
 				defer tx.Rollback(context.Background())
-				plan, err := s.planAppend(session.AppendBatch{ID: "session", Expected: 1, Events: []session.Event{event}})
+				second := event
+				second.Seq = 2
+				raw, err := json.Marshal(second)
 				require.NoError(t, err)
-				require.NoError(t, plan.apply(ctx, tx, time.Minute))
+				require.NoError(t, appendBatch(ctx, tx, leasestore.EventBatch{SessionID: "session", Expected: 1,
+					Seqs: []int64{2}, Types: []string{"test"}, Data: [][]byte{raw}}, time.Minute))
 				var writeErr error
 				done := make(chan struct{})
 				go func() {

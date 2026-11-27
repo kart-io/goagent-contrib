@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kart-io/goagent/core/durable"
+	"github.com/kart-io/goagent/core/durable/leasestore"
 	"github.com/kart-io/goagent/core/durable/storetest"
 	agentErrors "github.com/kart-io/goagent/errors"
 )
@@ -88,20 +90,17 @@ func newStore(t *testing.T, dsn, schema string) *Store {
 	return s
 }
 
+// 引擎交给后端的命名空间。
+var (
+	scopeNS   = leasestore.ScopeNS
+	sessionNS = leasestore.SessionNS
+)
+
 // stopRenew 停止续约且不释放，模拟持有者暂停或崩溃。ids 为空时停止全部。
 func stopRenew(s *Store, ns string, ids ...string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, h := range s.owners {
-		if len(ids) == 0 {
-			h.renew = false
-		}
-		for _, id := range ids {
-			if h.ns == ns && h.id == id {
-				h.renew = false
-			}
-		}
-	}
+	s.StopRenew(func(l leasestore.Lease) bool {
+		return len(ids) == 0 || (l.NS == ns && slices.Contains(ids, l.ID))
+	})
 }
 
 func TestConformance(t *testing.T) {
